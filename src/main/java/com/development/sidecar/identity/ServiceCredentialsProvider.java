@@ -10,10 +10,11 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.concurrent.atomic.AtomicReference;
-
 
 public class ServiceCredentialsProvider {
 
@@ -21,6 +22,10 @@ public class ServiceCredentialsProvider {
 
     private static final String GRANT_TYPE_FIELD = "grant_type";
     private static final String CLIENT_CREDENTIALS = "client_credentials";
+
+    private static final String RESTRICTED_HEADERS_PROPERTY =
+            "jdk.httpclient.allowRestrictedHeaders";
+    private static final String HOST_HEADER_NAME = "host";
 
     private final RestClient restClient;
     private final ServiceCredentialsProperties properties;
@@ -31,6 +36,27 @@ public class ServiceCredentialsProvider {
                                       ServiceCredentialsProperties properties) {
         this.restClient = restClient;
         this.properties = properties;
+
+        warnIfHostHeaderWillBeDropped();
+    }
+
+    private void warnIfHostHeaderWillBeDropped() {
+
+        if (properties.hostHeader().isBlank()) {
+            return;
+        }
+
+        String allowed = System.getProperty(RESTRICTED_HEADERS_PROPERTY, "");
+
+        boolean hostAllowed = allowed.toLowerCase().contains(HOST_HEADER_NAME);
+
+        if (!hostAllowed) {
+            log.warn("O componente está configurado para declarar o servidor pretendido, "
+                            + "mas a plataforma não permite: a credencial será emitida pela "
+                            + "identidade do endereço chamado, e o serviço seguinte pode recusá-la. "
+                            + "Habilite {}={} nas opções da máquina virtual.",
+                    RESTRICTED_HEADERS_PROPERTY, HOST_HEADER_NAME);
+        }
     }
 
     public String credential() {
@@ -75,11 +101,33 @@ public class ServiceCredentialsProvider {
             throw new ServiceCredentialsException("Serviço devolveu credencial sem valor");
         }
 
-        log.info("Credencial de serviço obtida");
+        log.info("Credencial de serviço obtida, emitida por {}", issuerOf(response.accessToken()));
 
         return new Credential(
                 response.accessToken(),
                 Instant.now().plusSeconds(response.expiresIn()));
+    }
+
+    private static String issuerOf(String credential) {
+        try {
+            int firstDot = credential.indexOf('.');
+            int secondDot = credential.indexOf('.', firstDot + 1);
+
+            if (firstDot < 0 || secondDot < 0) {
+                return "formato não reconhecido";
+            }
+
+            String payload = new String(
+                    Base64.getUrlDecoder().decode(credential.substring(firstDot + 1, secondDot)),
+                    StandardCharsets.UTF_8);
+
+            var issuer = JsonSupport.readTree(payload).get("iss");
+
+            return issuer == null || issuer.isNull() ? "sem emissor" : issuer.asString();
+
+        } catch (Exception e) {
+            return "emissor ilegível";
+        }
     }
 
     private void applyHost(HttpHeaders headers) {
