@@ -3,6 +3,8 @@ package com.development.sidecar.config;
 
 import com.development.sidecar.identity.AuthenticationJourneyClient;
 import com.development.sidecar.identity.HttpAuthenticationJourneyClient;
+import com.development.sidecar.identity.HttpTokenIssuer;
+import com.development.sidecar.identity.TokenIssuer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,5 +40,12 @@ public class IdentityConfiguration {
             IdentityProperties properties) {
 
         return new HttpAuthenticationJourneyClient(identityRestClient, properties);
+    }
+
+    @Bean
+    public TokenIssuer tokenIssuer(RestClient identityRestClient,
+                                   IdentityProperties properties) {
+
+        return new HttpTokenIssuer(identityRestClient, properties);
     }
 }
