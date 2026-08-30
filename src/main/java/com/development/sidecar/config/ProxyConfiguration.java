@@ -23,10 +23,6 @@ public class ProxyConfiguration {
                 .build();
     }
 
-    @Bean
-    public ProxyHeaderPolicy proxyHeaderPolicy(ProxyProperties properties) {
-        return new ProxyHeaderPolicy(properties.reservedHeaders());
-    }
 
     @Bean
     public RequestForwarder requestForwarder(HttpClient proxyHttpClient,
