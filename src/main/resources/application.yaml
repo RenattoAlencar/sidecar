@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: sidecar
+
+    server:
+      port: ${SIDECAR_PORT:8080}
+
+    management:
+      server:
+        port: ${SIDECAR_MANAGEMENT_PORT:8090}
+      endpoints:
+        web:
+          exposure:
+            include: health,info,prometheus
+      endpoint:
+        health:
+          probes:
+            enabled: true
+      health:
+        livenessstate:
+          enabled: true
+        readinessstate:
+          enabled: true
+
+    identity:
+      base-url: ${IDENTITY_BASE_URL:https://provedor-de-desenvolvimento.invalid/am}
+      realm: ${IDENTITY_REALM}
+      journey-type: ${IDENTITY_JOURNEY_TYPE}
+
+      channel-token-header: ${IDENTITY_CHANNEL_TOKEN_HEADER:x-empresa-authentication}
+
+      authenticator-code-header: ${IDENTITY_AUTHENTICATOR_CODE_HEADER:x-empresa-token}
+
+      client-id: ${IDENTITY_CLIENT_ID:cliente-de-desenvolvimento}
+      client-secret: ${IDENTITY_CLIENT_SECRET:segredo-de-desenvolvimento}
+      redirect-uri: ${IDENTITY_REDIRECT_URI:https://localhost:8080}
+      scopes: ${IDENTITY_SCOPES:openid}
+      session-cookie-name: ${IDENTITY_SESSION_COOKIE_NAME:cookie-de-desenvolvimento}
+
+      connect-timeout: ${IDENTITY_CONNECT_TIMEOUT:2s}
+      read-timeout: ${IDENTITY_READ_TIMEOUT:10s}
+
+    logging:
+      level:
+        root: ${LOG_LEVEL:INFO}
+        com.development.iam.sidecar: ${LOG_LEVEL_SIDECAR:INFO}
+
+        org.springframework.web.client: ${LOG_LEVEL_HTTP:INFO}
+
+      pattern:
+        console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-sem-correlacao}] %logger{36} - %msg%n"
