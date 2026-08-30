@@ -40,6 +40,21 @@ spring:
       connect-timeout: ${IDENTITY_CONNECT_TIMEOUT:2s}
       read-timeout: ${IDENTITY_READ_TIMEOUT:10s}
 
+    service-credentials:
+      url: ${SERVICE_CREDENTIALS_URL:https://credencial-de-desenvolvimento.invalid/token}
+      username: ${SERVICE_CREDENTIALS_USERNAME:usuario-de-desenvolvimento}
+      password: ${SERVICE_CREDENTIALS_PASSWORD:senha-de-desenvolvimento}
+      host-header: ${SERVICE_CREDENTIALS_HOST_HEADER:}
+      refresh-skew: ${SERVICE_CREDENTIALS_REFRESH_SKEW:30s}
+      connect-timeout: ${SERVICE_CREDENTIALS_CONNECT_TIMEOUT:2s}
+      read-timeout: ${SERVICE_CREDENTIALS_READ_TIMEOUT:5s}
+
+    token-handler:
+      url: ${TOKEN_HANDLER_URL:https://guardiao-de-desenvolvimento.invalid/*****}
+      token-ref-header: ${TOKEN_HANDLER_TOKEN_REF_HEADER:X-Token-Ref}
+      connect-timeout: ${TOKEN_HANDLER_CONNECT_TIMEOUT:2s}
+      read-timeout: ${TOKEN_HANDLER_READ_TIMEOUT:5s}
+
     logging:
       level:
         root: ${LOG_LEVEL:INFO}
