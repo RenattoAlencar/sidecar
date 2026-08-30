@@ -2,65 +2,83 @@ spring:
   application:
     name: sidecar
 
-    server:
-      port: ${SIDECAR_PORT:8080}
+server:
+  port: ${SIDECAR_PORT:8080}
 
-    management:
-      server:
-        port: ${SIDECAR_MANAGEMENT_PORT:8090}
-      endpoints:
-        web:
-          exposure:
-            include: health,info,prometheus
-      endpoint:
-        health:
-          probes:
-            enabled: true
-      health:
-        livenessstate:
-          enabled: true
-        readinessstate:
-          enabled: true
+management:
+  server:
+    port: ${SIDECAR_MANAGEMENT_PORT:8090}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
 
-    identity:
-      base-url: ${IDENTITY_BASE_URL:https://provedor-de-desenvolvimento.invalid/am}
-      realm: ${IDENTITY_REALM}
-      journey-type: ${IDENTITY_JOURNEY_TYPE}
+proxy:
+  target: ${PROXY_TARGET:http://127.0.0.1:8081}
+  connect-timeout: ${PROXY_CONNECT_TIMEOUT:2s}
+  read-timeout: ${PROXY_READ_TIMEOUT:10s}
+  max-body-bytes: ${PROXY_MAX_BODY_BYTES:2097152}
+  correlation-header: ${PROXY_CORRELATION_HEADER:x-**********-correlation-id}
 
-      channel-token-header: ${IDENTITY_CHANNEL_TOKEN_HEADER:x-empresa-authentication}
+  reserved-headers: ${PROXY_RESERVED_HEADERS:}
 
-      authenticator-code-header: ${IDENTITY_AUTHENTICATOR_CODE_HEADER:x-empresa-token}
+  intercept-rules:
+    - name: ${NAME_PIX_TRANSFERENCIA:pix-transfer}
+      path: ${PATH_PIX_TRANSFERENCIA:/api/v1/pix/transferencia}
+      methods: [ POST ]
+      journey: ${JOURNEY_PIX_TRANSFERENCIA:app-bank-authz-transacional}
 
-      client-id: ${IDENTITY_CLIENT_ID:cliente-de-desenvolvimento}
-      client-secret: ${IDENTITY_CLIENT_SECRET:segredo-de-desenvolvimento}
-      redirect-uri: ${IDENTITY_REDIRECT_URI:https://localhost:8080}
-      scopes: ${IDENTITY_SCOPES:openid}
-      session-cookie-name: ${IDENTITY_SESSION_COOKIE_NAME:cookie-de-desenvolvimento}
+channel:
+  session-header: ${CHANNEL_SESSION_HEADER:x-**********-authz-session}
+  response-header: ${CHANNEL_RESPONSE_HEADER:x-**********-token}
+  token-reference-header: ${CHANNEL_TOKEN_REFERENCE_HEADER:x-**********-authentication-am}
 
-      connect-timeout: ${IDENTITY_CONNECT_TIMEOUT:2s}
-      read-timeout: ${IDENTITY_READ_TIMEOUT:10s}
+identity:
+  base-url: ${IDENTITY_BASE_URL:https://provedor-de-desenvolvimento.invalid/am}
+  realm: ${IDENTITY_REALM:alpha}
+  journey-type: ${IDENTITY_JOURNEY_TYPE:service}
 
-    service-credentials:
-      url: ${SERVICE_CREDENTIALS_URL:https://credencial-de-desenvolvimento.invalid/token}
-      username: ${SERVICE_CREDENTIALS_USERNAME:usuario-de-desenvolvimento}
-      password: ${SERVICE_CREDENTIALS_PASSWORD:senha-de-desenvolvimento}
-      host-header: ${SERVICE_CREDENTIALS_HOST_HEADER:}
-      refresh-skew: ${SERVICE_CREDENTIALS_REFRESH_SKEW:30s}
-      connect-timeout: ${SERVICE_CREDENTIALS_CONNECT_TIMEOUT:2s}
-      read-timeout: ${SERVICE_CREDENTIALS_READ_TIMEOUT:5s}
+  channel-token-header: ${IDENTITY_CHANNEL_TOKEN_HEADER:x-**********-authentication}
+  authenticator-code-header: ${IDENTITY_AUTHENTICATOR_CODE_HEADER:x-**********-token}
 
-    token-handler:
-      url: ${TOKEN_HANDLER_URL:https://guardiao-de-desenvolvimento.invalid/*****}
-      token-ref-header: ${TOKEN_HANDLER_TOKEN_REF_HEADER:X-Token-Ref}
-      connect-timeout: ${TOKEN_HANDLER_CONNECT_TIMEOUT:2s}
-      read-timeout: ${TOKEN_HANDLER_READ_TIMEOUT:5s}
+  client-id: ${IDENTITY_CLIENT_ID:cliente-de-desenvolvimento}
+  client-secret: ${IDENTITY_CLIENT_SECRET:segredo-de-desenvolvimento}
+  redirect-uri: ${IDENTITY_REDIRECT_URI:https://localhost:8080}
+  scopes: ${IDENTITY_SCOPES:openid}
+  session-cookie-name: ${IDENTITY_SESSION_COOKIE_NAME:cookie-de-desenvolvimento}
 
-    logging:
-      level:
-        root: ${LOG_LEVEL:INFO}
-        com.development.iam.sidecar: ${LOG_LEVEL_SIDECAR:INFO}
+  connect-timeout: ${IDENTITY_CONNECT_TIMEOUT:2s}
+  read-timeout: ${IDENTITY_READ_TIMEOUT:10s}
 
-        org.springframework.web.client: ${LOG_LEVEL_HTTP:INFO}
+service-credentials:
+  url: ${SERVICE_CREDENTIALS_URL:https://credencial-de-desenvolvimento.invalid/token}
+  username: ${SERVICE_CREDENTIALS_USERNAME:usuario-de-desenvolvimento}
+  password: ${SERVICE_CREDENTIALS_PASSWORD:senha-de-desenvolvimento}
+  host-header: ${SERVICE_CREDENTIALS_HOST_HEADER:}
+  refresh-skew: ${SERVICE_CREDENTIALS_REFRESH_SKEW:30s}
+  connect-timeout: ${SERVICE_CREDENTIALS_CONNECT_TIMEOUT:2s}
+  read-timeout: ${SERVICE_CREDENTIALS_READ_TIMEOUT:5s}
 
-      pattern:
-        console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-sem-correlacao}] %logger{36} - %msg%n"
+token-handler:
+  url: ${TOKEN_HANDLER_URL:https://guardiao-de-desenvolvimento.invalid/ciam/token-handler/v1/token-refs}
+  token-ref-header: ${TOKEN_HANDLER_TOKEN_REF_HEADER:X-Token-Ref}
+  connect-timeout: ${TOKEN_HANDLER_CONNECT_TIMEOUT:2s}
+  read-timeout: ${TOKEN_HANDLER_READ_TIMEOUT:5s}
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.development.sidecar: ${LOG_LEVEL_SIDECAR:INFO}
+    org.springframework.web.client: ${LOG_LEVEL_HTTP:INFO}
+
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-sem-correlacao}] %logger{36} - %msg%n"
