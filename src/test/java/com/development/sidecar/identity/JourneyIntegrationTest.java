@@ -18,6 +18,12 @@ class JourneyIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(JourneyIntegrationTest.class);
 
+    private static final String JOURNEY = "app-bank-authz-transacional";
+    private static final String CHANNEL_TOKEN = "eydhsj...";
+    private static final String OTP_CODE = "263748";
+
+
+
     private static final String PAYLOAD = """
             {"channel":{"amount":{"currency":"BRL","value":10.25}},\
             "risk":{"event_type":"transaction"}}""";
@@ -28,14 +34,11 @@ class JourneyIntegrationTest {
     @Test
     void inicia_a_jornada_e_apresenta_o_corpo_da_transacao() {
 
-        String journey = System.getenv("JOURNEY_NAME");
-        String channelToken = System.getenv("JOURNEY_CHANNEL_TOKEN");
-        String otpCode = System.getenv("JOURNEY_OTP_CODE");
 
         JourneyOutcome outcome = journeyClient.start(
-                journey,
-                channelToken,
-                otpCode,
+                JOURNEY,
+                CHANNEL_TOKEN,
+                OTP_CODE,
                 PAYLOAD.getBytes(StandardCharsets.UTF_8));
 
         log.info("Desfecho: {}", outcome);
@@ -46,12 +49,10 @@ class JourneyIntegrationTest {
     @Test
     void recusa_a_jornada_quando_o_codigo_de_autenticador_nao_e_apresentado() {
 
-        String journey = System.getenv("JOURNEY_NAME");
-        String channelToken = System.getenv("JOURNEY_CHANNEL_TOKEN");
 
         JourneyOutcome outcome = journeyClient.start(
-                journey,
-                channelToken,
+                JOURNEY,
+                CHANNEL_TOKEN,
                 null,
                 PAYLOAD.getBytes(StandardCharsets.UTF_8));
 

@@ -1,6 +1,5 @@
 package com.development.sidecar.identity;
 
-
 import com.development.sidecar.config.IdentityProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +25,13 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
     private static final String INDEX_TYPE_PARAM = "authIndexType";
     private static final String INDEX_VALUE_PARAM = "authIndexValue";
 
+    private static final String PROMPT_NAME = "prompt";
+    private static final String OUTPUT_FIELD = "output";
+    private static final String NAME_FIELD = "name";
+    private static final String VALUE_FIELD = "value";
+
     private static final String PAYLOAD_PROMPT = "PAYLOAD_REQUIRED";
+    private static final String CHALLENGE_PROMPT = "CHALLENGE_REQUIRED";
 
     private final RestClient restClient;
     private final IdentityProperties properties;
@@ -61,14 +66,20 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
 
     @Override
     public JourneyOutcome advance(String sessionId, String response) {
+
         if (sessionId == null || sessionId.isBlank()) {
             throw new JourneyUnavailableException("Jornada sem identificador ao continuar");
         }
 
         log.info("Continuando a jornada: respondendo o desafio");
 
-        return post("continuação", null,
-                JourneyRequest.answering(sessionId, response));
+        try {
+            return post("continuação", null,
+                    JourneyRequest.answering(sessionId, CHALLENGE_PROMPT, response));
+
+        } catch (JourneyRequest.JourneyRequestException e) {
+            throw new JourneyUnavailableException("Não foi possível montar a continuação", e);
+        }
     }
 
     private JourneyOutcome open(String journey, String channelToken, String otpCode) {
@@ -98,8 +109,13 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
 
         String body = new String(payload, StandardCharsets.UTF_8);
 
-        return post("corpo da transação", null,
-                JourneyRequest.answering(step.authId(), body));
+        try {
+            return post("corpo da transação", null, JourneyRequest.answering(step, body));
+
+        } catch (JourneyRequest.JourneyRequestException e) {
+            throw new JourneyUnavailableException(
+                    "Não foi possível responder ao passo do provedor", e);
+        }
     }
 
     private boolean awaitingPayload(JourneyOutcome outcome) {
@@ -113,14 +129,14 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
         if (callbacks == null || callbacks.size() != 1) {
             return null;
         }
-        Object output = callbacks.getFirst().get("output");
+        Object output = callbacks.get(0).get(OUTPUT_FIELD);
 
         if (!(output instanceof List<?> fields)) {
             return null;
         }
         for (Object field : fields) {
-            if (field instanceof Map<?, ?> entry && "prompt".equals(entry.get("name"))) {
-                Object value = entry.get("value");
+            if (field instanceof Map<?, ?> entry && PROMPT_NAME.equals(entry.get(NAME_FIELD))) {
+                Object value = entry.get(VALUE_FIELD);
                 return value == null ? null : value.toString();
             }
         }
@@ -177,6 +193,8 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
 
         if (status != HttpStatus.OK.value()) {
             log.warn("Status inesperado do provedor no passo de {}: {}", stepName, status);
+            log.debug("Corpo da resposta inesperada: {}", body);
+
             throw new JourneyUnavailableException(
                     "Provedor de identidade respondeu status " + status
                             + " no passo de " + stepName);
