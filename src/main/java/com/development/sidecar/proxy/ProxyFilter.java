@@ -8,6 +8,7 @@ import com.development.sidecar.contract.ChannelResponseWriter;
 import com.development.sidecar.contract.TokenRefResponse;
 import com.development.sidecar.identity.AuthorizationOrchestrator;
 import com.development.sidecar.identity.AuthorizationResult;
+import com.development.sidecar.identity.RefusalKind;
 import com.development.sidecar.route.RouteDecision;
 import com.development.sidecar.route.RouteResolver;
 import jakarta.servlet.FilterChain;
@@ -24,6 +25,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
+
+import static com.development.sidecar.identity.AuthorizationResult.denied;
 
 
 public class ProxyFilter extends OncePerRequestFilter {
@@ -196,8 +199,7 @@ public class ProxyFilter extends OncePerRequestFilter {
                             result.token().accessToken()),
                     payload);
 
-            case DENIED -> responseWriter.error(response, HttpStatus.FORBIDDEN, "denied",
-                    correlationId);
+            case DENIED -> denied(response, result, correlationId);
 
             case EXPIRED -> responseWriter.error(response, HttpStatus.UNAUTHORIZED,
                     "session_expired", correlationId);
@@ -264,5 +266,17 @@ public class ProxyFilter extends OncePerRequestFilter {
         String name = request.getMethod();
 
         return name == null ? null : HttpMethod.valueOf(name);
+    }
+
+    private void denied(HttpServletResponse response,
+                        AuthorizationResult result,
+                        String correlationId) throws IOException {
+
+        if (result.refusal() == RefusalKind.INVALID_REQUEST) {
+            responseWriter.error(response, HttpStatus.BAD_REQUEST, "invalid_request",
+                    correlationId);
+            return;
+        }
+        responseWriter.error(response, HttpStatus.FORBIDDEN, "denied", correlationId);
     }
 }

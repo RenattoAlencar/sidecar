@@ -114,7 +114,7 @@ public class AuthorizationOrchestrator {
 
             case DENIED -> {
                 log.info("Jornada negada: regra={}, motivo={}", rule, outcome.reason());
-                yield AuthorizationResult.denied();
+                yield AuthorizationResult.denied(RefusalKind.of(outcome.reason()));
             }
 
             case EXPIRED -> {
