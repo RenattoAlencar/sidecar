@@ -69,6 +69,19 @@ class ChallengeMapperTest {
 
             assertThat(response.challenge().type()).isEqualTo("PAYLOAD_REQUIRED");
         }
+
+        @Test
+        @DisplayName("com mais de um callback, o primeiro é o que nomeia o desafio")
+        void varios_callbacks() {
+
+            JourneyStep step = new JourneyStep(AUTH_ID, List.of(
+                    nameCallback("CHALLENGE_REQUIRED", "OTP:AUTHFY"),
+                    nameCallback("OTHER", "X:Y")), null);
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(step);
+
+            assertThat(response.challenge().type()).isEqualTo("OTP");
+        }
     }
 
     @Nested
@@ -105,19 +118,6 @@ class ChallengeMapperTest {
             Map<String, Object> callback = Map.of("type", "NameCallback");
 
             ChallengeResponse response = ChallengeMapper.toChallenge(stepWith(callback));
-
-            assertThat(response.challenge().type()).isEqualTo("UNKNOWN");
-        }
-
-        @Test
-        @DisplayName("mais de um callback não é reconhecido")
-        void varios_callbacks() {
-
-            JourneyStep step = new JourneyStep(AUTH_ID, List.of(
-                    nameCallback("CHALLENGE_REQUIRED", "OTP:AUTHFY"),
-                    nameCallback("OTHER", "X:Y")), null);
-
-            ChallengeResponse response = ChallengeMapper.toChallenge(step);
 
             assertThat(response.challenge().type()).isEqualTo("UNKNOWN");
         }
