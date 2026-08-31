@@ -20,13 +20,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-/**
- * A cadeia inteira, do início da jornada à referência devolvida ao canal.
- * <p>
- * Cada peça já tem teste próprio; este verifica que elas se encaixam — que o
- * identificador de sessão emitido pela jornada chega à emissão do token, e que o
- * token emitido chega à guarda.
- */
+
 class AuthorizationChainTest {
 
     private static final String PROVIDER_URL = "https://provedor.invalid/am";
