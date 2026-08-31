@@ -9,8 +9,10 @@ import com.development.sidecar.contract.TokenRefResponse;
 import com.development.sidecar.identity.AuthorizationOrchestrator;
 import com.development.sidecar.identity.AuthorizationResult;
 import com.development.sidecar.identity.RefusalKind;
+import com.development.sidecar.observability.SidecarMetrics;
 import com.development.sidecar.route.RouteDecision;
 import com.development.sidecar.route.RouteResolver;
+import io.micrometer.core.instrument.Timer;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,17 +28,17 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
 
-import static com.development.sidecar.identity.AuthorizationResult.denied;
-
-
 public class ProxyFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(ProxyFilter.class);
+
+    private static final String PASSTHROUGH_RULE = "passthrough";
 
     private final RouteResolver routeResolver;
     private final RequestForwarder requestForwarder;
     private final AuthorizationOrchestrator orchestrator;
     private final ChannelResponseWriter responseWriter;
+    private final SidecarMetrics metrics;
     private final ChannelProperties channelProperties;
     private final IdentityProperties identityProperties;
     private final ProxyProperties proxyProperties;
@@ -45,6 +47,7 @@ public class ProxyFilter extends OncePerRequestFilter {
                        RequestForwarder requestForwarder,
                        AuthorizationOrchestrator orchestrator,
                        ChannelResponseWriter responseWriter,
+                       SidecarMetrics metrics,
                        ChannelProperties channelProperties,
                        IdentityProperties identityProperties,
                        ProxyProperties proxyProperties) {
@@ -53,6 +56,7 @@ public class ProxyFilter extends OncePerRequestFilter {
         this.requestForwarder = requestForwarder;
         this.orchestrator = orchestrator;
         this.responseWriter = responseWriter;
+        this.metrics = metrics;
         this.channelProperties = channelProperties;
         this.identityProperties = identityProperties;
         this.proxyProperties = proxyProperties;
@@ -104,7 +108,7 @@ public class ProxyFilter extends OncePerRequestFilter {
 
             case PASSTHROUGH -> {
                 log.debug("Rota fora da matriz, encaminhando sem verificação");
-                forward(request, response, correlationId, Map.of(), null);
+                forward(request, response, correlationId, Map.of(), null, PASSTHROUGH_RULE);
             }
 
             case INTERCEPT -> intercept(request, response, decision, correlationId);
@@ -152,7 +156,7 @@ public class ProxyFilter extends OncePerRequestFilter {
                 payload,
                 decision.metricTag());
 
-        apply(request, response, result, correlationId, payload);
+        apply(request, response, result, decision, correlationId, payload);
     }
 
     private void advance(HttpServletRequest request,
@@ -166,7 +170,7 @@ public class ProxyFilter extends OncePerRequestFilter {
                 header(request, channelProperties.responseHeader()),
                 decision.metricTag());
 
-        apply(request, response, result, correlationId, null);
+        apply(request, response, result, decision, correlationId, null);
     }
 
     private void effect(HttpServletRequest request,
@@ -177,14 +181,19 @@ public class ProxyFilter extends OncePerRequestFilter {
 
         AuthorizationResult result = orchestrator.resolve(tokenRef, decision.metricTag());
 
-        apply(request, response, result, correlationId, null);
+        apply(request, response, result, decision, correlationId, null);
     }
 
     private void apply(HttpServletRequest request,
                        HttpServletResponse response,
                        AuthorizationResult result,
+                       RouteDecision decision,
                        String correlationId,
                        byte[] payload) throws IOException {
+
+        String rule = decision.metricTag();
+
+        metrics.authorization(rule, result.type());
 
         switch (result.type()) {
 
@@ -197,7 +206,7 @@ public class ProxyFilter extends OncePerRequestFilter {
             case RESOLVED -> forward(request, response, correlationId,
                     Map.of(channelProperties.tokenReferenceHeader(),
                             result.token().accessToken()),
-                    payload);
+                    payload, rule);
 
             case DENIED -> denied(response, result, correlationId);
 
@@ -218,13 +227,28 @@ public class ProxyFilter extends OncePerRequestFilter {
         }
     }
 
+    private void denied(HttpServletResponse response,
+                        AuthorizationResult result,
+                        String correlationId) throws IOException {
+
+        if (result.refusal() == RefusalKind.INVALID_REQUEST) {
+            responseWriter.error(response, HttpStatus.BAD_REQUEST, "invalid_request",
+                    correlationId);
+            return;
+        }
+        responseWriter.error(response, HttpStatus.FORBIDDEN, "denied", correlationId);
+    }
+
     private void forward(HttpServletRequest request,
                          HttpServletResponse response,
                          String correlationId,
                          Map<String, String> injected,
-                         byte[] payload) throws IOException {
+                         byte[] payload,
+                         String rule) throws IOException {
 
         response.setHeader(proxyProperties.correlationHeader(), correlationId);
+
+        Timer.Sample sample = metrics.start();
 
         try {
             requestForwarder.forward(request, response, injected, payload);
@@ -238,6 +262,9 @@ public class ProxyFilter extends OncePerRequestFilter {
             log.error("Falha ao encaminhar ao serviço de negócio");
             log.debug("Detalhe da falha no encaminhamento", e);
             responseWriter.error(response, HttpStatus.BAD_GATEWAY, "bad_gateway", correlationId);
+
+        } finally {
+            metrics.forwarded(sample, rule);
         }
     }
 
@@ -266,17 +293,5 @@ public class ProxyFilter extends OncePerRequestFilter {
         String name = request.getMethod();
 
         return name == null ? null : HttpMethod.valueOf(name);
-    }
-
-    private void denied(HttpServletResponse response,
-                        AuthorizationResult result,
-                        String correlationId) throws IOException {
-
-        if (result.refusal() == RefusalKind.INVALID_REQUEST) {
-            responseWriter.error(response, HttpStatus.BAD_REQUEST, "invalid_request",
-                    correlationId);
-            return;
-        }
-        responseWriter.error(response, HttpStatus.FORBIDDEN, "denied", correlationId);
     }
 }

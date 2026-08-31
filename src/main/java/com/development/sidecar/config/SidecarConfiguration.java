@@ -5,9 +5,11 @@ import com.development.sidecar.identity.AuthenticationJourneyClient;
 import com.development.sidecar.identity.AuthorizationOrchestrator;
 import com.development.sidecar.identity.TokenCustodian;
 import com.development.sidecar.identity.TokenIssuer;
+import com.development.sidecar.observability.SidecarMetrics;
 import com.development.sidecar.proxy.ProxyFilter;
 import com.development.sidecar.proxy.RequestForwarder;
 import com.development.sidecar.route.RouteResolver;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -36,11 +38,17 @@ public class SidecarConfiguration {
     }
 
     @Bean
+    public SidecarMetrics sidecarMetrics(MeterRegistry meterRegistry) {
+        return new SidecarMetrics(meterRegistry);
+    }
+
+    @Bean
     public FilterRegistrationBean<ProxyFilter> proxyFilterRegistration(
             RouteResolver routeResolver,
             RequestForwarder requestForwarder,
             AuthorizationOrchestrator orchestrator,
             ChannelResponseWriter responseWriter,
+            SidecarMetrics metrics,
             ChannelProperties channelProperties,
             IdentityProperties identityProperties,
             ProxyProperties proxyProperties) {
@@ -50,6 +58,7 @@ public class SidecarConfiguration {
                 requestForwarder,
                 orchestrator,
                 responseWriter,
+                metrics,
                 channelProperties,
                 identityProperties,
                 proxyProperties);
