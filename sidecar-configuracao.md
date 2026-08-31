@@ -1,310 +1,213 @@
-# Sidecar — Guia de Desenvolvimento e Diagnóstico
+# Sidecar — Configuração
 
-Como rodar, o que olhar quando algo falha, e por onde passa cada requisição.
+Toda configuração vem de variável de ambiente. Este documento diz **quem define
+cada uma** e com que valor.
+
+Nos exemplos, `<org>` é o prefixo de cabeçalho adotado pela organização.
 
 ---
 
-## Mapa das classes
+## Como ler as tabelas
 
-Uma requisição percorre estes pontos, nesta ordem:
+| Marca | Quem define | Onde vive |
+|---|---|---|
+| **FIXO** | O componente | Já vem no contêiner. Não mexa |
+| **AMBIENTE** | Plataforma / segurança | ConfigMap e Secret do ambiente |
+| **CANAL** | A equipe do serviço de negócio | Manifesto da instância |
 
-```
-ProxyFilter               porta de entrada, decide o caminho
- ├─ RequestForwarder      recusa por delimitação, lê o corpo, encaminha
- ├─ RouteResolver         a rota é verificada?
- ├─ AuthorizationOrchestrator
- │   ├─ AuthenticationJourneyClient   passos da jornada
- │   ├─ TokenIssuer                   código de autorização e troca
- │   └─ TokenCustodian                guarda e recupera
- └─ ChannelResponseWriter  escreve a resposta ao canal
-```
+A equipe do canal preenche **apenas as marcadas como CANAL**.
 
-### Onde cada coisa acontece
+---
 
-| Preciso entender... | Olhe em |
+## Resumo por responsável
+
+### O que o canal preenche
+
+| Variável | Exemplo |
 |---|---|
-| Por que a rota não foi verificada | `RouteResolver` |
-| Por que o cabeçalho não chegou ao BFF | `ProxyHeaderPolicy` |
-| O que foi enviado à jornada | `JourneyRequest` |
-| Como a recusa virou resposta | `JourneyRefusal` → `RefusalKind` → `ProxyFilter.denied` |
-| Como o desafio virou 428 | `ChallengeMapper` |
-| Por que a resposta ao desafio não foi lida | `ChallengeAnswerReader` |
-| Por que o token não foi emitido | `HttpTokenIssuer` |
-| Por que a credencial foi recusada | `ServiceCredentialsProvider` |
+| `PROXY_TARGET` | `http://127.0.0.1:8081` |
+| `SIDECAR_PORT` | `8080` |
+| `NAME_<ROTA>` | `pix-transfer` |
+| `PATH_<ROTA>` | `/api/v1/pix/transferencia` |
+| `JOURNEY_<ROTA>` | `app-bank-authz-transacional` |
 
-### Fronteiras que valem respeitar
+As três últimas se repetem por rota verificada.
 
-- **`identity`** fala o dialeto do provedor. Estrutura de callback, `authId` e
-  nomes de campo do provedor vivem aqui e não saem.
-- **`contract`** fala o dialeto do canal. É onde a tradução acontece.
-- **`proxy`** decide e encaminha. Não conhece jornada.
-- **`route`** só decide se a rota é verificada.
+### O que o canal não preenche
 
-Se você precisar mencionar `callbacks` fora de `identity`, provavelmente há um
-vazamento de abstração.
+Nomes de cabeçalho, endereços do provedor e do guardião, credenciais, tempos
+limite. Vêm do contêiner ou do ambiente.
 
 ---
 
-## Rodar localmente
+## Contrato
 
-### O que precisa estar de pé
+Nomes de cabeçalho e limites. Iguais para todos os canais: mudá-los em uma
+instância quebraria o contrato que o canal já conhece.
 
-1. **Um alvo na porta do BFF.** Qualquer serviço que responda serve. Para
-   diagnóstico, um que ecoe os cabeçalhos recebidos ajuda muito — é como se
-   confere que a referência virou token.
+| Definido por | Variável | Valor | O que é |
+|---|---|---|---|
+| **FIXO** | `CHANNEL_SESSION_HEADER` | `x-<org>-authz-session` | Sessão da jornada, no desafio |
+| **FIXO** | `CHANNEL_RESPONSE_HEADER` | `x-<org>-token` | Código do autenticador |
+| **FIXO** | `CHANNEL_TOKEN_REFERENCE_HEADER` | `x-<org>-authentication-am` | Referência do token |
+| **FIXO** | `IDENTITY_CHANNEL_TOKEN_HEADER` | `x-<org>-authentication` | Token do canal |
+| **FIXO** | `IDENTITY_AUTHENTICATOR_CODE_HEADER` | `x-<org>-token` | Repasse do código ao provedor |
+| **FIXO** | `PROXY_CORRELATION_HEADER` | `x-<org>-correlation-id` | Rastreio |
+| **FIXO** | `TOKEN_HANDLER_TOKEN_REF_HEADER` | `X-Token-Ref` | Referência, na consulta ao guardião |
+| **FIXO** | `PROXY_MAX_BODY_BYTES` | `2097152` | Teto do corpo, em bytes |
 
-2. **Acesso ao provedor de identidade** e ao **guardião de token** em
-   homologação.
-
-### Variáveis mínimas
-
-```
-PROXY_TARGET=http://127.0.0.1:8082
-IDENTITY_BASE_URL=<provedor>
-IDENTITY_CLIENT_ID=<cliente>
-IDENTITY_CLIENT_SECRET=<segredo>
-IDENTITY_SCOPES=<os cadastrados no cliente>
-IDENTITY_SESSION_COOKIE_NAME=<cookie de sessão>
-IDENTITY_REDIRECT_URI=<o mesmo cadastrado no cliente>
-SERVICE_CREDENTIALS_URL=<sso>
-SERVICE_CREDENTIALS_USERNAME=<usuário>
-SERVICE_CREDENTIALS_PASSWORD=<senha>
-TOKEN_HANDLER_URL=<guardião>
-LOG_LEVEL_SIDECAR=DEBUG
-```
-
-### Opção da máquina virtual
-
-Quando `service-credentials.host-header` está preenchido:
-
-```
--Djdk.httpclient.allowRestrictedHeaders=host
-```
-
-**Confira a grafia.** A plataforma ignora propriedade desconhecida sem
-reclamar, e o efeito de errar uma letra é o cabeçalho ser descartado em
-silêncio — a credencial sai pela identidade errada e o guardião a recusa com
-uma mensagem que fala de credencial revogada.
+> `CHANNEL_RESPONSE_HEADER` e `IDENTITY_AUTHENTICATOR_CODE_HEADER` têm o mesmo
+> valor de propósito: é o mesmo cabeçalho que o canal envia e que o componente
+> repassa ao provedor.
+>
+> Se a organização precisar renomear um cabeçalho, muda em todas as instâncias
+> de uma vez — nunca em uma só.
 
 ---
 
-## Cenários
+## Provedor de identidade
 
-Substitua `{{host}}`, `{{jwt}}` e `{{otp}}`. O código do autenticador expira em
-30 segundos — gere e use na sequência.
-
-### 1. Passthrough
-
-Rota fora da lista. Confirma que o proxy funciona sem autorização no caminho.
-
-```bash
-curl -i -X POST '{{host}}/api/v1/rota-qualquer' \
-  -H 'Content-Type: application/json' \
-  -d '{"teste": true}'
-```
-
-**Esperado:** a resposta do alvo, inalterada.
-**No log:** `Rota fora da matriz, encaminhando sem verificação`
-
-### 2. Rota verificada, sem código
-
-```bash
-curl -i -X POST '{{host}}/api/v1/pix/transferencia' \
-  -H 'Content-Type: application/json' \
-  -H 'x-porto-authentication: {{jwt}}' \
-  -d '{"channel":{"amount":{"currency":"BRL","value":10.25}},"risk":{"event_type":"transaction"}}'
-```
-
-**Esperado:** `403 {"error":"denied"}` — a jornada transacional exige o código
-no início.
-**No log:** `Jornada recusada no passo de início: 002`
-
-### 3. Autorização completa
-
-```bash
-curl -i -X POST '{{host}}/api/v1/pix/transferencia' \
-  -H 'Content-Type: application/json' \
-  -H 'x-porto-authentication: {{jwt}}' \
-  -H 'x-porto-token: {{otp}}' \
-  -d '{"channel":{"amount":{"currency":"BRL","value":10.25}},"risk":{"event_type":"transaction"},"authN":{"transactionId":"..."}}'
-```
-
-**Esperado:** `200 {"status":"authorized","tokenRef":"..."}`
-**No log:** início → `PAYLOAD_REQUIRED` → corpo apresentado → concluída → token
-emitido → sob guarda
-
-### 4. Efetivação
-
-```bash
-curl -i -X POST '{{host}}/api/v1/pix/transferencia' \
-  -H 'Content-Type: application/json' \
-  -H 'x-porto-authentication: {{jwt}}' \
-  -H 'x-porto-authentication-am: {{tokenRef}}' \
-  -d '{"channel":{"amount":{"currency":"BRL","value":10.25}},"risk":{"event_type":"transaction"},"authN":{"transactionId":"..."}}'
-```
-
-**Esperado:** a resposta do alvo.
-**Confirme no alvo:** o cabeçalho `x-porto-authentication-am` deve chegar com o
-**token**, não com a referência. É a verificação central do componente.
-
-### 5. Referência desconhecida
-
-```bash
-curl -i -X POST '{{host}}/api/v1/pix/transferencia' \
-  -H 'Content-Type: application/json' \
-  -H 'x-porto-authentication: {{jwt}}' \
-  -H 'x-porto-authentication-am: 00000000-0000-0000-0000-000000000000' \
-  -d '{"channel":{},"risk":{}}'
-```
-
-**Esperado:** `401 {"error":"authorization_required"}`
-
-### 6. Caminho recusado na normalização
-
-```bash
-curl -i -X POST '{{host}}/api/v1/pix/../pix/transferencia' \
-  -H 'Content-Type: application/json' \
-  -d '{}'
-```
-
-**Esperado:** `400 {"error":"bad_request"}`
-**No log:** `Requisição recusada na normalização: motivo=caminho com salto de diretório`
-
-### 7. Delimitação ambígua
-
-```bash
-curl -i -X POST '{{host}}/api/v1/pix/transferencia' \
-  -H 'Content-Type: application/json' \
-  -H 'Transfer-Encoding: chunked' \
-  -H 'Content-Length: 20' \
-  -d '{"teste":true}'
-```
-
-**Esperado:** `400`, recusado antes de qualquer verificação.
-
-### 8. Desafio
-
-Exige uma jornada que emita desafio no meio. Primeiro obtenha a sessão:
-
-```bash
-curl -i -X POST '{{host}}/api/v1/fator/cadastro' \
-  -H 'Content-Type: application/json' \
-  -H 'x-porto-authentication: {{jwt}}' \
-  -d '{"inicio":true}'
-```
-
-**Esperado:** `428` com `sessionId` e `challenge`.
-
-Depois responda:
-
-```bash
-curl -i -X POST '{{host}}/api/v1/fator/cadastro' \
-  -H 'Content-Type: application/json' \
-  -H 'x-porto-authentication: {{jwt}}' \
-  -H 'x-porto-authz-session: {{sessionId}}' \
-  -d '{"authz":{"response":"{{resposta}}"}}'
-```
+| Definido por | Variável | Exemplo | Observação |
+|---|---|---|---|
+| **AMBIENTE** | `IDENTITY_BASE_URL` | `https://<provedor-hml>/am` | Raiz, sem o caminho de autenticação |
+| **AMBIENTE** | `IDENTITY_REALM` | `alpha` | |
+| **AMBIENTE** | `IDENTITY_JOURNEY_TYPE` | `service` | |
+| **AMBIENTE** | `IDENTITY_CLIENT_ID` | `sidecar-authz` | Cliente cadastrado no provedor |
+| **AMBIENTE** | `IDENTITY_CLIENT_SECRET` | — | **Segredo.** Nunca no repositório |
+| **AMBIENTE** | `IDENTITY_REDIRECT_URI` | `https://localhost:8080` | Precisa ser **idêntico** ao cadastrado no cliente, inclusive barra final |
+| **AMBIENTE** | `IDENTITY_SCOPES` | `write` | Os cadastrados no cliente. Escopo não concedido faz a autorização falhar sem dizer por quê |
+| **AMBIENTE** | `IDENTITY_SESSION_COOKIE_NAME` | `417726ee02928f6` | Nome do cookie de sessão do provedor |
 
 ---
 
-## Diagnóstico
+## Credencial do componente
 
-### O log conta a história
+| Definido por | Variável | Exemplo | Observação |
+|---|---|---|---|
+| **AMBIENTE** | `SERVICE_CREDENTIALS_URL` | `https://<sso>/auth/realms/<realm>/protocol/openid-connect/token` | |
+| **AMBIENTE** | `SERVICE_CREDENTIALS_USERNAME` | `sidecar` | |
+| **AMBIENTE** | `SERVICE_CREDENTIALS_PASSWORD` | — | **Segredo** |
+| **AMBIENTE** | `SERVICE_CREDENTIALS_HOST_HEADER` | vazio, ou `<sso-exposto>` | Veja o aviso abaixo |
 
-Com `LOG_LEVEL_SIDECAR=DEBUG`, uma autorização bem-sucedida deixa este rastro:
-
-```
-Rota interceptada: regra=<regra>
-Iniciando a jornada '<jornada>' no realm '<realm>'
-Código de autenticador apresentado ao provedor
-Passo de início recebeu desafio
-Apresentando o corpo da transação à jornada
-Jornada concluída no passo de corpo da transação
-Solicitando o código de autorização
-Token emitido pelo provedor
-Credencial de serviço obtida, emitida por <emissor>
-Entregando o token sob guarda
-Token sob guarda
-Autorização concluída: regra=<regra>
-```
-
-**Onde parou é onde está o problema.** Cada linha ausente aponta um trecho.
-
-### Sintomas e causas
-
-| Sintoma | Onde olhar |
-|---|---|
-| `404` sem log nenhum | Caminho do contexto configurado, ou o filtro não registrado |
-| `Rota fora da matriz` numa rota que deveria ser verificada | Indentação de `intercept-rules` no arquivo de configuração; caminho e método exatos |
-| `Nenhuma rota verificada configurada` na subida | A lista não foi lida — quase sempre indentação |
-| `Jornada recusada: 002` mesmo enviando o código | O cabeçalho do código não está configurado, ou o valor venceu |
-| `Autorização não concedeu código` | Escopo, `redirect_uri` ou cliente. O registro mostra os parâmetros que vieram no lugar |
-| `Token has been revoked` no guardião | Credencial de serviço emitida pela identidade errada. Confira o emissor no registro |
-| `Provedor respondeu status 500` no passo do corpo | O callback foi enviado incompleto — precisa voltar como o provedor o emitiu |
-| `Continuação sem resposta ao desafio` | O corpo não trouxe `authz.response`, ou está malformado |
-| `Recusa sem código no detalhe` | A jornada não usa numeração; a mensagem diz mais |
-
-### Aumentar o detalhe
-
-```
-LOG_LEVEL_SIDECAR=DEBUG          decisões do componente
-LOG_LEVEL_HTTP=DEBUG             corpo e cabeçalhos das chamadas
-```
-
-**O segundo mostra o token do canal, o código do autenticador e o corpo da
-transação.** Use na estação de trabalho e em nenhum outro lugar.
-
-### Métricas
-
-```
-GET http://localhost:8090/actuator/prometheus
-```
-
-Só aparecem depois da primeira requisição — o medidor é registrado no primeiro
-uso.
-
-```
-sidecar_authorization_total{rule="...",outcome="..."}
-sidecar_forward_seconds{rule="..."}
-```
+> **Se preencher o cabeçalho de servidor**, a máquina virtual precisa de
+> `-Djdk.httpclient.allowRestrictedHeaders=host`. Sem isso ele é descartado **sem
+> erro e sem registro**: a credencial sai pela identidade errada e o guardião a
+> recusa com uma mensagem que fala de credencial revogada.
+>
+> Apontar a URL direto para o endereço exposto evita a questão.
 
 ---
 
-## Testes de integração
+## Guardião de token
 
-As classes em `identity` exercitam a cadeia contra os serviços reais, sem
-passar pelo componente HTTP. Úteis para isolar: se o teste passa e a chamada
-por HTTP falha, o problema está no proxy.
-
-| Teste | Cobre |
-|---|---|
-| `JourneyIntegrationTest` | jornada e apresentação do corpo |
-| `TokenIssuanceIntegrationTest` | jornada e emissão do token |
-| `TokenCustodyIntegrationTest` | cadeia completa, incluindo a guarda |
-
-**Antes de enviar ao repositório:** remova o token do canal e o código do
-autenticador das classes de teste. Prefira variáveis de ambiente na
-configuração de execução.
+| Definido por | Variável | Exemplo |
+|---|---|---|
+| **AMBIENTE** | `TOKEN_HANDLER_URL` | `https://<guardiao>/token-handler/v1/token-refs` |
 
 ---
 
-## Armadilhas conhecidas
+## Instância
 
-**Reserializar o corpo.** O provedor calcula um resumo sobre o corpo
-apresentado. O componente o trata como bytes do início ao fim; converter para
-objeto e de volta muda o resumo sem mudar a transação, e a falha aparece longe
-da origem.
+**É o que a equipe do canal define.** Cada sidecar atende um serviço de negócio,
+com suas rotas.
 
-**Remontar o callback.** O provedor espera de volta a estrutura que emitiu.
-Enviar só a parte que mudou fez o provedor responder 500 — verificado em teste.
+### Destino e portas
 
-**Cabeçalho injetado fora da lista de reservados.** O valor do chamador
-atravessa junto e o destino pode ler o errado. O componente avisa no registro
-quando isso acontece.
+| Definido por | Variável | Exemplo | Observação |
+|---|---|---|---|
+| **CANAL** | `PROXY_TARGET` | `http://127.0.0.1:8081` | O serviço de negócio no mesmo agrupamento. Endereço local, porque os dois compartilham o mesmo espaço de rede |
+| **CANAL** | `SIDECAR_PORT` | `8080` | Onde o componente atende. Assume a porta que o serviço de negócio expunha |
+| **AMBIENTE** | `SIDECAR_MANAGEMENT_PORT` | `8090` | Saúde e medições, em porta separada |
 
-**Corpo consumido duas vezes.** O fluxo de entrada só pode ser lido uma vez. Nas
-rotas verificadas ele é retido em memória; nas demais segue direto. Ler o corpo
-num caminho que também encaminha exige a versão retida.
+### Rotas verificadas
 
-**Espera ativa.** O componente não faz polling, por decisão de projeto. Jornadas
-que dependem disso não são atendidas.
+Uma entrada por rota que exige autorização. Caminho **e** método.
+
+```yaml
+proxy:
+  intercept-rules:
+    - name: ${NAME_PIX_TRANSFERENCIA:pix-transfer}
+      path: ${PATH_PIX_TRANSFERENCIA:/api/v1/pix/transferencia}
+      methods: [ POST ]
+      journey: ${JOURNEY_PIX_TRANSFERENCIA:app-bank-authz-transacional}
+
+    - name: ${NAME_TED:ted-transfer}
+      path: ${PATH_TED:/api/v1/transferencias/ted}
+      methods: [ POST ]
+      journey: ${JOURNEY_TED:app-bank-authz-transacional}
+```
+
+| Definido por | Campo | O que é |
+|---|---|---|
+| **CANAL** | `name` | Identificação nas medições e no registro. Escolha livre |
+| **CANAL** | `path` | Caminho **exato**. Não é prefixo: `/pix` não pega `/pix/transferencia` |
+| **CANAL** | `methods` | Só os que exigem autorização. Consultar e transacionar chegam pelo mesmo endereço, e só o segundo precisa |
+| **CANAL** | `journey` | A jornada a iniciar. Vem de quem administra o provedor |
+
+**O que não estiver aqui atravessa sem verificação.** É deliberado: verificar
+tudo tornaria o componente responsável por jornadas que não precisam dele.
+
+---
+
+## Registro
+
+| Definido por | Variável | Valor | Observação |
+|---|---|---|---|
+| **AMBIENTE** | `LOG_LEVEL` | `INFO` | |
+| **AMBIENTE** | `LOG_LEVEL_SIDECAR` | `INFO` | `DEBUG` para diagnosticar |
+| **AMBIENTE** | `LOG_LEVEL_HTTP` | `INFO` | **Nunca `DEBUG` fora da estação de trabalho** — mostra o token do canal, o código do autenticador e o corpo da transação |
+
+O nome do pacote na configuração de registro precisa bater com o do projeto.
+Apontar para o pacote errado faz o nível nunca ser aplicado, e nenhum registro do
+componente aparece.
+
+---
+
+## Tempos limite
+
+Padrões conservadores. Ajuste só com medição em mãos.
+
+| Definido por | Variável | Padrão | Alcance |
+|---|---|---|---|
+| **FIXO** | `PROXY_CONNECT_TIMEOUT` | `2s` | Serviço de negócio |
+| **FIXO** | `PROXY_READ_TIMEOUT` | `10s` | Serviço de negócio |
+| **FIXO** | `IDENTITY_CONNECT_TIMEOUT` | `2s` | Provedor |
+| **FIXO** | `IDENTITY_READ_TIMEOUT` | `10s` | Provedor — a jornada tem mais passos |
+| **FIXO** | `SERVICE_CREDENTIALS_CONNECT_TIMEOUT` | `2s` | Credencial |
+| **FIXO** | `SERVICE_CREDENTIALS_READ_TIMEOUT` | `5s` | Credencial |
+| **FIXO** | `SERVICE_CREDENTIALS_REFRESH_SKEW` | `30s` | Antecedência da renovação |
+| **FIXO** | `TOKEN_HANDLER_CONNECT_TIMEOUT` | `2s` | Guardião |
+| **FIXO** | `TOKEN_HANDLER_READ_TIMEOUT` | `5s` | Guardião |
+
+> O componente está no caminho crítico: toda transação passa por ele duas vezes,
+> e a segunda soma uma chamada ao guardião. Tempo limite alto demais segura a
+> transação; baixo demais recusa o que passaria.
+>
+> Se um canal precisar de valores diferentes, leve à discussão em vez de ajustar
+> só na instância — a diferença costuma indicar problema em outro lugar.
+
+---
+
+## Ao subir uma instância nova
+
+1. **Aponte o destino** para o serviço de negócio (`PROXY_TARGET`)
+2. **Assuma a porta** que ele expunha (`SIDECAR_PORT`)
+3. **Liste as rotas** que exigem autorização, com caminho e método exatos
+4. **Confirme os segredos** vindos do cofre, não do repositório
+5. **Suba e leia o registro:** se aparecer *nenhuma rota verificada
+   configurada*, a lista não foi lida — quase sempre indentação
+6. **Chame uma rota não listada** e confirme que ela atravessa
+7. **Chame uma rota listada** e confirme que a autorização é exigida
+
+---
+
+## Sinais de configuração errada
+
+| Sintoma | Causa provável | Onde olhar |
+|---|---|---|
+| Rota que deveria ser verificada atravessa | Caminho ou método divergente; ou `intercept-rules` fora do bloco `proxy` | CANAL |
+| *Nenhuma rota verificada configurada* na subida | A lista chegou vazia | CANAL |
+| Autorização falha sem explicar | Escopo não concedido ao cliente, ou endereço de redirecionamento diferente do cadastrado | AMBIENTE |
+| Guardião recusa a credencial | Cabeçalho de servidor descartado — confira a opção da máquina virtual | AMBIENTE |
+| Nenhum registro do componente | Nome do pacote errado na configuração de registro | AMBIENTE |
+| Serviço de negócio recebe a referência em vez do token | O cabeçalho da referência não está reservado | FIXO |
