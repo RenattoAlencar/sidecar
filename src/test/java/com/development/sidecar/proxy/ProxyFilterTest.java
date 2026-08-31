@@ -374,7 +374,6 @@ class ProxyFilterTest {
                 Duration.ofSeconds(2),
                 Duration.ofSeconds(10),
                 2_097_152L,
-                Set.of(),
                 List.of(new InterceptRule("pix", PROTECTED_PATH, Set.of(HttpMethod.POST), JOURNEY)),
                 CORRELATION_HEADER);
     }

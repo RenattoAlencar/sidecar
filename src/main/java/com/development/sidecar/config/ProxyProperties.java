@@ -32,9 +32,6 @@ public record ProxyProperties(
         @DefaultValue("2097152")
         long maxBodyBytes,
 
-        @DefaultValue("")
-        Set<String> reservedHeaders,
-
         @Valid
         @DefaultValue
         List<InterceptRule> interceptRules,
@@ -45,7 +42,6 @@ public record ProxyProperties(
 ) {
 
     public ProxyProperties {
-        reservedHeaders = reservedHeaders == null ? Set.of() : Set.copyOf(reservedHeaders);
         interceptRules = interceptRules == null ? List.of() : List.copyOf(interceptRules);
 
         requirePositive(connectTimeout, "proxy.connect-timeout");

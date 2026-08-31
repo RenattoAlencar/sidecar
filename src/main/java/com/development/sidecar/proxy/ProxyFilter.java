@@ -267,6 +267,10 @@ public class ProxyFilter extends OncePerRequestFilter {
         try {
             requestForwarder.forward(request, response, injected, payload);
 
+        } catch (RequestForwarder.InvalidTargetException e) {
+            log.warn("Requisição recusada na construção do destino");
+            responseWriter.error(response, HttpStatus.BAD_REQUEST, "bad_request", correlationId);
+
         } catch (RequestForwarder.PayloadTooLargeException e) {
             log.warn("Corpo acima do teto durante o encaminhamento");
             responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large",

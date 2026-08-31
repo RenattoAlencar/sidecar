@@ -335,7 +335,6 @@ class RequestForwarderTest {
                 Duration.ofSeconds(2),
                 Duration.ofSeconds(5),
                 MAX_BODY,
-                Set.of("x-reservado"),
                 List.of(),
                 "x-correlation-id");
     }

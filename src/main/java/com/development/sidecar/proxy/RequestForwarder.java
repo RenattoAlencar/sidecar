@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -32,6 +33,11 @@ public class RequestForwarder {
     private static final String FORWARDED_PROTO_HEADER = "X-Forwarded-Proto";
     private static final String FORWARDED_HOST_HEADER = "X-Forwarded-Host";
     private static final String HOST_HEADER = "Host";
+
+    private static final char FRAGMENT_MARKER = '#';
+    private static final char BACKSLASH = '\\';
+
+    private static final int MAX_LOGGED_LENGTH = 64;
 
     private static final Set<String> BODYLESS_METHODS =
             Set.of("GET", "HEAD", "DELETE", "OPTIONS", "TRACE");
@@ -129,19 +135,63 @@ public class RequestForwarder {
 
     private URI buildTargetUri(HttpServletRequest request) {
 
-        String target = properties.target().toString();
+        URI target = properties.target();
+        String base = target.toString();
 
         StringBuilder uri = new StringBuilder(
-                target.endsWith("/") ? target.substring(0, target.length() - 1) : target);
+                base.endsWith("/") ? base.substring(0, base.length() - 1) : base);
 
         uri.append(request.getRequestURI());
 
         String queryString = request.getQueryString();
 
         if (queryString != null && !queryString.isEmpty()) {
+            requireSafeQuery(queryString);
             uri.append('?').append(queryString);
         }
-        return URI.create(uri.toString());
+
+        URI candidate;
+        try {
+            candidate = new URI(uri.toString());
+        } catch (URISyntaxException e) {
+            log.warn("Destino não pôde ser construído a partir do caminho recebido");
+            throw new InvalidTargetException("Destino inválido", e);
+        }
+
+        requireSameDestination(candidate, target);
+
+        return candidate;
+    }
+
+    private static void requireSameDestination(URI candidate, URI target) {
+
+        boolean sameDestination = target.getScheme() != null
+                && target.getHost() != null
+                && target.getScheme().equalsIgnoreCase(candidate.getScheme())
+                && target.getHost().equalsIgnoreCase(candidate.getHost())
+                && target.getPort() == candidate.getPort();
+
+        if (!sameDestination) {
+            log.error("Destino construído aponta fora do alvo configurado");
+            throw new InvalidTargetException("Destino fora do alvo configurado");
+        }
+    }
+
+    private static void requireSafeQuery(String queryString) {
+
+        for (int index = 0; index < queryString.length(); index++) {
+            char current = queryString.charAt(index);
+
+            boolean unsafe = current == FRAGMENT_MARKER
+                    || current == BACKSLASH
+                    || current < 0x20
+                    || current == 0x7F;
+
+            if (unsafe) {
+                log.warn("Consulta recusada por conter caractere não permitido");
+                throw new InvalidTargetException("Consulta com caractere não permitido");
+            }
+        }
     }
 
     private HttpRequest buildUpstreamRequest(HttpServletRequest request,
@@ -171,8 +221,8 @@ public class RequestForwarder {
                 return;
             }
             if (!headerPolicy.isReserved(name)) {
-                log.warn("Cabeçalho escrito pelo componente não está reservado: {}. "
-                                + "O valor do chamador atravessa junto.", name);
+                log.warn("Cabeçalho escrito pelo componente não está reservado: {}",
+                        sanitize(name));
             }
             builder.header(name, value);
         });
@@ -201,7 +251,8 @@ public class RequestForwarder {
         for (String headerName : Collections.list(request.getHeaderNames())) {
 
             if (headerPolicy.isReserved(headerName)) {
-                log.warn("Cabeçalho reservado recebido do chamador e descartado: {}", headerName);
+                log.warn("Cabeçalho reservado recebido do chamador e descartado: {}",
+                        sanitize(headerName));
                 continue;
             }
             if (!headerPolicy.isForwardable(headerName, connectionTokens)) {
@@ -261,6 +312,23 @@ public class RequestForwarder {
             log.warn("Falha ao transferir a resposta após o envio do status");
             throw e;
         }
+    }
+
+    private static String sanitize(String value) {
+
+        if (value == null) {
+            return "";
+        }
+        int length = Math.min(value.length(), MAX_LOGGED_LENGTH);
+
+        StringBuilder clean = new StringBuilder(length);
+
+        for (int index = 0; index < length; index++) {
+            char current = value.charAt(index);
+
+            clean.append(current < 0x20 || current == 0x7F ? '.' : current);
+        }
+        return clean.toString();
     }
 
     private static String joinValues(Enumeration<String> values) {
@@ -353,6 +421,17 @@ public class RequestForwarder {
     public static class UpstreamException extends RuntimeException {
 
         public UpstreamException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    public static class InvalidTargetException extends RuntimeException {
+
+        public InvalidTargetException(String message) {
+            super(message);
+        }
+
+        public InvalidTargetException(String message, Throwable cause) {
             super(message, cause);
         }
     }

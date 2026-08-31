@@ -38,12 +38,7 @@ public class ProxyConfiguration {
     }
 
     @Bean
-    public ProxyHeaderPolicy proxyHeaderPolicy(ProxyProperties properties,
-                                               ChannelProperties channelProperties) {
-
-        Set<String> reserved = new LinkedHashSet<>(properties.reservedHeaders());
-        reserved.addAll(channelProperties.reservedNames());
-
-        return new ProxyHeaderPolicy(reserved);
+    public ProxyHeaderPolicy proxyHeaderPolicy(ChannelProperties channelProperties) {
+        return new ProxyHeaderPolicy(channelProperties.reservedNames());
     }
 }

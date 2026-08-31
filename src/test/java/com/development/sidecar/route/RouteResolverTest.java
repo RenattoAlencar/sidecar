@@ -181,7 +181,6 @@ class RouteResolverTest {
                 Duration.ofSeconds(2),
                 Duration.ofSeconds(10),
                 2_097_152L,
-                Set.of(),
                 List.of(rules),
                 "x-correlation-id"));
     }
