@@ -1,5 +1,6 @@
 package com.development.sidecar.config;
 
+import com.development.sidecar.contract.ChallengeAnswerReader;
 import com.development.sidecar.contract.ChannelResponseWriter;
 import com.development.sidecar.identity.AuthenticationJourneyClient;
 import com.development.sidecar.identity.AuthorizationOrchestrator;
@@ -48,6 +49,7 @@ public class SidecarConfiguration {
             RequestForwarder requestForwarder,
             AuthorizationOrchestrator orchestrator,
             ChannelResponseWriter responseWriter,
+            ChallengeAnswerReader answerReader,
             SidecarMetrics metrics,
             ChannelProperties channelProperties,
             IdentityProperties identityProperties,
@@ -58,6 +60,7 @@ public class SidecarConfiguration {
                 requestForwarder,
                 orchestrator,
                 responseWriter,
+                answerReader,
                 metrics,
                 channelProperties,
                 identityProperties,
@@ -69,5 +72,10 @@ public class SidecarConfiguration {
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
 
         return registration;
+    }
+
+    @Bean
+    public ChallengeAnswerReader challengeAnswerReader(ObjectMapper objectMapper) {
+        return new ChallengeAnswerReader(objectMapper);
     }
 }

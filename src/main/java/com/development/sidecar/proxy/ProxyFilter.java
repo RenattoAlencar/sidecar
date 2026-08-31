@@ -3,6 +3,7 @@ package com.development.sidecar.proxy;
 import com.development.sidecar.config.ChannelProperties;
 import com.development.sidecar.config.IdentityProperties;
 import com.development.sidecar.config.ProxyProperties;
+import com.development.sidecar.contract.ChallengeAnswerReader;
 import com.development.sidecar.contract.ChallengeMapper;
 import com.development.sidecar.contract.ChannelResponseWriter;
 import com.development.sidecar.contract.TokenRefResponse;
@@ -38,6 +39,7 @@ public class ProxyFilter extends OncePerRequestFilter {
     private final RequestForwarder requestForwarder;
     private final AuthorizationOrchestrator orchestrator;
     private final ChannelResponseWriter responseWriter;
+    private final ChallengeAnswerReader answerReader;
     private final SidecarMetrics metrics;
     private final ChannelProperties channelProperties;
     private final IdentityProperties identityProperties;
@@ -47,6 +49,7 @@ public class ProxyFilter extends OncePerRequestFilter {
                        RequestForwarder requestForwarder,
                        AuthorizationOrchestrator orchestrator,
                        ChannelResponseWriter responseWriter,
+                       ChallengeAnswerReader answerReader,
                        SidecarMetrics metrics,
                        ChannelProperties channelProperties,
                        IdentityProperties identityProperties,
@@ -56,6 +59,7 @@ public class ProxyFilter extends OncePerRequestFilter {
         this.requestForwarder = requestForwarder;
         this.orchestrator = orchestrator;
         this.responseWriter = responseWriter;
+        this.answerReader = answerReader;
         this.metrics = metrics;
         this.channelProperties = channelProperties;
         this.identityProperties = identityProperties;
@@ -165,9 +169,19 @@ public class ProxyFilter extends OncePerRequestFilter {
                          RouteDecision decision,
                          String correlationId) throws IOException {
 
+        byte[] body;
+        try {
+            body = requestForwarder.readBody(request);
+
+        } catch (RequestForwarder.PayloadTooLargeException e) {
+            responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large",
+                    correlationId);
+            return;
+        }
+
         AuthorizationResult result = orchestrator.advance(
                 sessionId,
-                header(request, channelProperties.responseHeader()),
+                answerReader.read(body),
                 decision.metricTag());
 
         apply(request, response, result, decision, correlationId, null);
