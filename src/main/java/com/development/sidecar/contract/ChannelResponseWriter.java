@@ -26,6 +26,8 @@ public class ChannelResponseWriter {
     private static final String ERROR_FIELD = "error";
     private static final String CORRELATION_FIELD = "correlationId";
 
+    private static final int MAX_HEADER_VALUE_LENGTH = 64;
+
     private final ObjectMapper objectMapper;
     private final String correlationHeader;
 
@@ -75,7 +77,7 @@ public class ChannelResponseWriter {
 
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setHeader(correlationHeader, correlationId);
+        response.setHeader(correlationHeader, safeHeaderValue(correlationId));
 
         applySecurityHeaders(response);
 
@@ -86,5 +88,28 @@ public class ChannelResponseWriter {
     private static void applySecurityHeaders(HttpServletResponse response) {
         response.setHeader(STRICT_TRANSPORT_HEADER, STRICT_TRANSPORT_VALUE);
         response.setHeader(CONTENT_TYPE_OPTIONS_HEADER, CONTENT_TYPE_OPTIONS_VALUE);
+    }
+
+    private static String safeHeaderValue(String value) {
+
+        if (value == null) {
+            return "";
+        }
+        int length = Math.min(value.length(), MAX_HEADER_VALUE_LENGTH);
+
+        StringBuilder clean = new StringBuilder(length);
+
+        for (int index = 0; index < length; index++) {
+            char current = value.charAt(index);
+
+            boolean allowed = Character.isLetterOrDigit(current)
+                    || current == '-'
+                    || current == '_';
+
+            if (allowed) {
+                clean.append(current);
+            }
+        }
+        return clean.toString();
     }
 }

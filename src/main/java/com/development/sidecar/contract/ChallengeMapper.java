@@ -5,12 +5,6 @@ import com.development.sidecar.identity.JourneyStep;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Traduz o desafio emitido pelo provedor para o contrato do canal.
- * <p>
- * É o único ponto que conhece os dois lados. O que o provedor emite não
- * atravessa: nem a estrutura de callback, nem os nomes de campo dele.
- */
 public final class ChallengeMapper {
 
     private static final String OUTPUT_FIELD = "output";
@@ -21,6 +15,8 @@ public final class ChallengeMapper {
 
     private static final String TYPE_SEPARATOR = ":";
     private static final String UNKNOWN_TYPE = "UNKNOWN";
+
+    private static final int MAX_TYPE_LENGTH = 32;
 
     private ChallengeMapper() {
     }
@@ -34,15 +30,9 @@ public final class ChallengeMapper {
         String type = separator > 0 ? descriptor.substring(0, separator) : descriptor;
         String provider = separator > 0 ? descriptor.substring(separator + 1) : null;
 
-        return ChallengeResponse.of(step.authId(), type, provider);
+        return ChallengeResponse.of(step.authId(), safe(type), safe(provider));
     }
 
-    /**
-     * Lê o que o provedor indicou como desafio.
-     * <p>
-     * Prefere o valor sugerido na entrada, que é onde o provedor nomeia o
-     * desafio; recorre ao rótulo quando não houver.
-     */
     private static String descriptorOf(List<Map<String, Object>> callbacks) {
 
         if (callbacks.isEmpty()) {
@@ -58,6 +48,20 @@ public final class ChallengeMapper {
         String prompt = namedValue(callback.get(OUTPUT_FIELD), PROMPT_NAME);
 
         return prompt == null || prompt.isBlank() ? UNKNOWN_TYPE : prompt;
+    }
+
+    private static String safe(String value) {
+
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.length() > MAX_TYPE_LENGTH
+                ? value.substring(0, MAX_TYPE_LENGTH)
+                : value;
+
+        String clean = trimmed.replaceAll("[^A-Za-z0-9_.-]", "");
+
+        return clean.isBlank() ? UNKNOWN_TYPE : clean;
     }
 
     private static String firstValue(Object entries) {
