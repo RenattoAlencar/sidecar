@@ -15,12 +15,7 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 public class RequestForwarder {
 
@@ -136,23 +131,25 @@ public class RequestForwarder {
     private URI buildTargetUri(HttpServletRequest request) {
 
         URI target = properties.target();
-        String base = target.toString();
 
-        StringBuilder uri = new StringBuilder(
-                base.endsWith("/") ? base.substring(0, base.length() - 1) : base);
-
-        uri.append(request.getRequestURI());
-
+        String path = request.getRequestURI();
         String queryString = request.getQueryString();
 
         if (queryString != null && !queryString.isEmpty()) {
             requireSafeQuery(queryString);
-            uri.append('?').append(queryString);
         }
 
         URI candidate;
         try {
-            candidate = new URI(uri.toString());
+            candidate = new URI(
+                    target.getScheme(),
+                    null,
+                    target.getHost(),
+                    target.getPort(),
+                    path,
+                    queryString == null || queryString.isEmpty() ? null : queryString,
+                    null);
+
         } catch (URISyntaxException e) {
             log.warn("Destino não pôde ser construído a partir do caminho recebido");
             throw new InvalidTargetException("Destino inválido", e);
