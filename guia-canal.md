@@ -72,12 +72,12 @@ desprotegida sem aviso**.
 
 ---
 
-## 3. Chamada
+## 3. Chamada e resposta
 
 Nas operações protegidas, a mesma chamada acontece **duas vezes**. Mesmo
 endereço, mesmo corpo; mudam os headers.
 
-### 1ª — autorizar
+### Passo 1 — autorizar
 
 ```bash
 curl -i -X POST 'https://<seu-servico>/api/v1/pix/transferencia' \
@@ -96,44 +96,7 @@ curl -i -X POST 'https://<seu-servico>/api/v1/pix/transferencia' \
       }'
 ```
 
-**Esta chamada não efetiva a transação.** Ela só autoriza.
-
-### 2ª — efetivar
-
-```bash
-curl -i -X POST 'https://<seu-servico>/api/v1/pix/transferencia' \
-  -H 'Content-Type: application/json' \
-  -H '<org>-authentication: <JWT>' \
-  -H '<org>-authentication-am: 84da0844-d1f9-31f9-b4f4-79b420be8be4' \
-  -d '{ ...o mesmo corpo da 1ª chamada... }'
-```
-
-### Operação não protegida
-
-Nada muda. GET, POST fora da lista — a chamada é a que você já faz:
-
-```bash
-curl -i -X GET 'https://<seu-servico>/api/v1/pix/chaves?documento=18075470001' \
-  -H '<org>-authentication: <JWT>'
-```
-
-### A regra que mais gera erro
-
-**O corpo precisa ser idêntico nas duas chamadas.**
-
-A autorização fica presa àquela transação. Se o valor ou o destinatário mudarem
-entre uma chamada e outra, a efetivação é recusada — e o erro **não aponta para
-a causa**.
-
-Guarde o corpo enviado e reenvie o mesmo. Não monte o JSON de novo a partir dos
-seus objetos: reserializar pode mudar a ordem das chaves ou o formato de um
-número sem que nada pareça diferente.
-
----
-
-## 4. Resposta
-
-### 1ª chamada — autorizado
+**Resposta — 200:**
 
 ```json
 {
@@ -142,11 +105,67 @@ número sem que nada pareça diferente.
 }
 ```
 
-Guarde o `tokenRef` e use na 2ª chamada.
+**Esta chamada não efetiva a transação** — ela só autoriza.
 
-### 2ª chamada
+Se vier outro código, veja **6. Erros**.
 
-A resposta do seu serviço, como sempre. A transação aconteceu.
+#### O que é o `tokenRef`
+
+É uma **referência** à autorização, não a autorização em si. A credencial fica
+guardada num serviço interno; você recebe só o identificador dela.
+
+- Sozinha, não autoriza nada — só o componente consegue resolvê-la
+- Vale **uma vez**, para aquela transação
+
+Guarde entre os dois passos. Não precisa persistir.
+
+### Passo 2 — efetivar
+
+Agora com o `tokenRef` no lugar do código, e o mesmo corpo:
+
+```bash
+curl -i -X POST 'https://<seu-servico>/api/v1/pix/transferencia' \
+  -H 'Content-Type: application/json' \
+  -H '<org>-authentication: <JWT>' \
+  -H '<org>-authentication-am: 84da0844-d1f9-31f9-b4f4-79b420be8be4' \
+  -d '{ ...o mesmo corpo do passo 1... }'
+```
+
+**Resposta:** a do seu serviço, como sempre. A transação aconteceu.
+
+### O corpo precisa ser idêntico nos dois passos
+
+A autorização fica presa àquela transação. Se o valor ou o destinatário mudarem
+entre um passo e outro, a efetivação é recusada — e o erro **não aponta para a
+causa**.
+
+Guarde o corpo enviado e reenvie o mesmo. Não monte o JSON de novo a partir dos
+seus objetos: reserializar pode mudar a ordem das chaves ou o formato de um
+número sem que nada pareça diferente.
+
+### Operação não protegida
+
+Nada muda — nem chamada, nem resposta:
+
+```bash
+curl -i -X GET 'https://<seu-servico>/api/v1/pix/chaves?documento=18075470001' \
+  -H '<org>-authentication: <JWT>'
+```
+
+---
+
+## 4. Resumo do fluxo
+
+```
+  1ª chamada  →  200 { tokenRef }        autoriza
+       ↓
+  2ª chamada  →  resposta do seu serviço  efetiva
+```
+
+| Passo | Header que muda | O que volta |
+|---|---|---|
+| 1 | `<org>-token` (código) | `tokenRef` |
+| 2 | `<org>-authentication-am` (tokenRef) | resposta do seu serviço |
 
 ---
 
