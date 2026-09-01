@@ -1,6 +1,7 @@
 package com.development.sidecar.identity;
 
 import com.development.sidecar.config.IdentityProperties;
+import com.development.sidecar.config.ServiceCredentialsProperties;
 import com.development.sidecar.config.TokenHandlerProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,7 +21,13 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-
+/**
+ * A cadeia inteira, do início da jornada à referência devolvida ao canal.
+ * <p>
+ * Cada peça já tem teste próprio; este verifica que elas se encaixam — que a
+ * sessão emitida pela jornada chega à emissão do token, e que o token emitido
+ * chega à guarda.
+ */
 class AuthorizationChainTest {
 
     private static final String PROVIDER_URL = "https://provedor.invalid/am";
@@ -34,6 +41,7 @@ class AuthorizationChainTest {
     private static final String SESSION = "S6C6ZyySbmGRePt6xAoDNCxB-Tk";
     private static final String ACCESS_TOKEN = "opaco-do-provedor";
     private static final String TOKEN_REF = "84da0844-d1f9-31f9-b4f4-79b420be8be4";
+    private static final String RULE = "regra";
 
     private static final byte[] PAYLOAD =
             "{\"channel\":{\"message\":\"não identificado\"},\"risk\":{},\"authN\":{}}"
@@ -77,7 +85,7 @@ class AuthorizationChainTest {
         expectCustody();
 
         AuthorizationResult result =
-                orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, "regra");
+                orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
 
         assertThat(result.type()).isEqualTo(AuthorizationResult.Type.AUTHORIZED);
         assertThat(result.reference().tokenRef()).isEqualTo(TOKEN_REF);
@@ -99,7 +107,7 @@ class AuthorizationChainTest {
                         "{\"dados\":{\"accessToken\":\"" + ACCESS_TOKEN + "\"}}",
                         MediaType.APPLICATION_JSON));
 
-        AuthorizationResult result = orchestrator.resolve(TOKEN_REF, "regra");
+        AuthorizationResult result = orchestrator.resolve(TOKEN_REF, RULE);
 
         assertThat(result.type()).isEqualTo(AuthorizationResult.Type.RESOLVED);
         assertThat(result.token().accessToken()).isEqualTo(ACCESS_TOKEN);
@@ -115,27 +123,35 @@ class AuthorizationChainTest {
         custody.expect(request -> {})
                 .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
-        AuthorizationResult result = orchestrator.resolve(TOKEN_REF, "regra");
+        AuthorizationResult result = orchestrator.resolve(TOKEN_REF, RULE);
 
         assertThat(result.type()).isEqualTo(AuthorizationResult.Type.AUTHORIZATION_REQUIRED);
     }
 
     @Test
-    @DisplayName("sem o código do autenticador, a jornada recusa")
+    @DisplayName("sem o código do autenticador, o canal é chamado a informá-lo")
     void recusa_sem_codigo() {
 
-        provider.expect(request -> {})
-                .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body("""
-                                {"code":401,"message":"OTP nulo (Journey encerrada)",
-                                "detail":{"errorCode":"002"}}"""));
+        expectRefusal("002", "OTP nulo (Journey encerrada)");
 
         AuthorizationResult result =
-                orchestrator.start(JOURNEY, CHANNEL_TOKEN, null, PAYLOAD, "regra");
+                orchestrator.start(JOURNEY, CHANNEL_TOKEN, null, PAYLOAD, RULE);
 
         assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
-        assertThat(result.refusal()).isEqualTo(RefusalKind.RETRY);
+        assertThat(result.refusal()).isEqualTo(RefusalKind.CODE_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("código incorreto pede outro código")
+    void recusa_por_codigo_incorreto() {
+
+        expectRefusal("003", "OTP inválido (Journey encerrada)");
+
+        AuthorizationResult result =
+                orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
+
+        assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
+        assertThat(result.refusal()).isEqualTo(RefusalKind.CODE_INVALID);
     }
 
     @Test
@@ -153,10 +169,34 @@ class AuthorizationChainTest {
                                 "detail":{"errorCode":"014"}}"""));
 
         AuthorizationResult result =
-                orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, "regra");
+                orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
 
         assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
-        assertThat(result.refusal()).isEqualTo(RefusalKind.INVALID_REQUEST);
+        assertThat(result.refusal()).isEqualTo(RefusalKind.PAYLOAD_INVALID);
+    }
+
+    @Test
+    @DisplayName("sessão do canal recusada pede renovação, não código novo")
+    void sessao_do_canal_recusada() {
+
+        expectRefusal("001", "Token inválido (Journey encerrada)");
+
+        AuthorizationResult result =
+                orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
+
+        assertThat(result.type()).isEqualTo(AuthorizationResult.Type.EXPIRED);
+    }
+
+    @Test
+    @DisplayName("falha do provedor é indisponibilidade: o titular não tem o que corrigir")
+    void falha_do_provedor() {
+
+        expectRefusal("006", "Falha interna validação OTP (Journey encerrada)");
+
+        AuthorizationResult result =
+                orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
+
+        assertThat(result.type()).isEqualTo(AuthorizationResult.Type.UNAVAILABLE);
     }
 
     /**
@@ -208,6 +248,18 @@ class AuthorizationChainTest {
                         .body("{\"dados\":{\"tokenRef\":\"" + TOKEN_REF + "\"}}"));
     }
 
+    /**
+     * Recusa do provedor logo no início da jornada.
+     */
+    private void expectRefusal(String errorCode, String message) {
+
+        provider.expect(request -> {})
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":401,\"message\":\"" + message
+                                + "\",\"detail\":{\"errorCode\":\"" + errorCode + "\"}}"));
+    }
+
     private static String payloadCallback() {
         return """
                 {"authId":"%s","callbacks":[{"type":"NameCallback",
@@ -235,10 +287,8 @@ class AuthorizationChainTest {
                 Duration.ofSeconds(2), Duration.ofSeconds(5));
     }
 
-    private static com.development.sidecar.config.ServiceCredentialsProperties
-            credentialsProperties() {
-
-        return new com.development.sidecar.config.ServiceCredentialsProperties(
+    private static ServiceCredentialsProperties credentialsProperties() {
+        return new ServiceCredentialsProperties(
                 URI.create(CREDENTIALS_URL), "componente", "segredo", "",
                 Duration.ofSeconds(30), Duration.ofSeconds(2), Duration.ofSeconds(5));
     }
