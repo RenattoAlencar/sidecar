@@ -17,12 +17,6 @@ public class ChannelResponseWriter {
 
     public static final String AUTHORIZATION_REQUIRED_HEADER = "x-authz-required";
 
-    private static final String STRICT_TRANSPORT_HEADER = "Strict-Transport-Security";
-    private static final String STRICT_TRANSPORT_VALUE = "max-age=31536000; includeSubDomains";
-
-    private static final String CONTENT_TYPE_OPTIONS_HEADER = "X-Content-Type-Options";
-    private static final String CONTENT_TYPE_OPTIONS_VALUE = "nosniff";
-
     private static final String ERROR_FIELD = "error";
     private static final String CORRELATION_FIELD = "correlationId";
 
@@ -79,15 +73,13 @@ public class ChannelResponseWriter {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setHeader(correlationHeader, safeHeaderValue(correlationId));
 
-        applySecurityHeaders(response);
+        response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        response.setHeader("X-Frame-Options", "DENY");
+        response.setHeader("Cache-Control", "no-store");
 
         response.getWriter().write(objectMapper.writeValueAsString(body));
         response.flushBuffer();
-    }
-
-    private static void applySecurityHeaders(HttpServletResponse response) {
-        response.setHeader(STRICT_TRANSPORT_HEADER, STRICT_TRANSPORT_VALUE);
-        response.setHeader(CONTENT_TYPE_OPTIONS_HEADER, CONTENT_TYPE_OPTIONS_VALUE);
     }
 
     private static String safeHeaderValue(String value) {
