@@ -79,6 +79,8 @@ public class AuthorizationOrchestrator {
 
     public AuthorizationResult resolve(String tokenRef, String rule) {
 
+        log.info("Resolvendo referência: regra={}", rule);
+
         AccessToken token;
         try {
             token = tokenCustodian.retrieve(tokenRef);
