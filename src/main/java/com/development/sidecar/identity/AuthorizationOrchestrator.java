@@ -112,16 +112,32 @@ public class AuthorizationOrchestrator {
 
             case COMPLETED -> issue(outcome, rule);
 
-            case DENIED -> {
-                log.info("Jornada negada: regra={}, motivo={}", rule, outcome.reason());
-                yield AuthorizationResult.denied(RefusalKind.of(outcome.reason()));
-            }
+            case DENIED -> refuse(outcome.reason(), rule);
 
             case EXPIRED -> {
                 log.info("Sessão da jornada expirada: regra={}", rule);
                 yield AuthorizationResult.expired();
             }
         };
+    }
+
+    private AuthorizationResult refuse(String code, String rule) {
+
+        if (JourneyRefusalOutcome.isSessionProblem(code)) {
+            log.info("Sessão do canal recusada pelo provedor: regra={}", rule);
+            return AuthorizationResult.expired();
+        }
+
+        if (JourneyRefusalOutcome.isProviderFailure(code)) {
+            log.error("Provedor falhou ao validar a autorização: regra={}", rule);
+            return AuthorizationResult.unavailable();
+        }
+
+        RefusalKind refusal = RefusalKind.of(code);
+
+        log.info("Jornada negada: regra={}, motivo={}, código={}", rule, refusal.reason(), code);
+
+        return AuthorizationResult.denied(refusal);
     }
 
     private AuthorizationResult issue(JourneyOutcome outcome, String rule) {

@@ -34,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,7 +98,7 @@ class ProxyFilterTest {
         @DisplayName("rota fora da matriz atravessa sem autorização")
         void atravessa_rota_aberta() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
 
             filter.doFilter(request(OPEN_PATH), response, new MockFilterChain());
 
@@ -109,7 +110,7 @@ class ProxyFilterTest {
         @DisplayName("sem cabeçalho de autorização, a jornada começa")
         void inicia_a_jornada() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
             when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
                     .thenReturn(AuthorizationResult.authorized(new TokenReference(TOKEN_REF)));
@@ -123,7 +124,7 @@ class ProxyFilterTest {
         @DisplayName("com a sessão, a jornada continua")
         void continua_a_jornada() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(forwarder.readBody(any()))
                     .thenReturn("{\"authz\":{\"response\":\"149707\"}}"
                             .getBytes(StandardCharsets.UTF_8));
@@ -142,7 +143,7 @@ class ProxyFilterTest {
         @DisplayName("com a referência, a transação é efetivada")
         void efetiva_a_transacao() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(orchestrator.resolve(anyString(), anyString()))
                     .thenReturn(AuthorizationResult.resolved(accessToken()));
 
@@ -158,7 +159,7 @@ class ProxyFilterTest {
         @DisplayName("a referência tem precedência sobre a sessão")
         void referencia_vence_sessao() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(orchestrator.resolve(anyString(), anyString()))
                     .thenReturn(AuthorizationResult.resolved(accessToken()));
 
@@ -181,7 +182,7 @@ class ProxyFilterTest {
         @DisplayName("o serviço de negócio recebe o token, não a referência")
         void escreve_o_token_no_encaminhamento() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(orchestrator.resolve(anyString(), anyString()))
                     .thenReturn(AuthorizationResult.resolved(accessToken()));
 
@@ -191,8 +192,7 @@ class ProxyFilterTest {
             filter.doFilter(request, response, new MockFilterChain());
 
             @SuppressWarnings("unchecked")
-            ArgumentCaptor<Map<String, String>> injected =
-                    ArgumentCaptor.forClass(Map.class);
+            ArgumentCaptor<Map<String, String>> injected = ArgumentCaptor.forClass(Map.class);
 
             verify(forwarder).forward(any(), any(), injected.capture(), any());
 
@@ -209,7 +209,7 @@ class ProxyFilterTest {
         @Test
         void desafio_vira_precondicao_requerida() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
             when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
                     .thenReturn(AuthorizationResult.challenge(challengeStep()));
@@ -224,7 +224,7 @@ class ProxyFilterTest {
         @Test
         void autorizacao_devolve_a_referencia() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
             when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
                     .thenReturn(AuthorizationResult.authorized(new TokenReference(TOKEN_REF)));
@@ -236,39 +236,9 @@ class ProxyFilterTest {
         }
 
         @Test
-        @DisplayName("recusa sobre a resposta: um código novo pode resolver")
-        void recusa_por_codigo_vira_proibido() throws Exception {
-
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
-            when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
-            when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
-                    .thenReturn(AuthorizationResult.denied(RefusalKind.RETRY));
-
-            filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
-
-            assertThat(response.getStatus()).isEqualTo(403);
-            assertThat(response.getContentAsString()).contains("denied");
-        }
-
-        @Test
-        @DisplayName("recusa sobre o corpo: repetir não muda nada")
-        void recusa_por_corpo_vira_requisicao_invalida() throws Exception {
-
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
-            when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
-            when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
-                    .thenReturn(AuthorizationResult.denied(RefusalKind.INVALID_REQUEST));
-
-            filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
-
-            assertThat(response.getStatus()).isEqualTo(400);
-            assertThat(response.getContentAsString()).contains("invalid_request");
-        }
-
-        @Test
         void indisponibilidade_vira_servico_indisponivel() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
             when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
                     .thenReturn(AuthorizationResult.unavailable());
@@ -276,6 +246,92 @@ class ProxyFilterTest {
             filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
 
             assertThat(response.getStatus()).isEqualTo(503);
+        }
+    }
+
+    @Nested
+    @DisplayName("Recusa: o estado diz a família, o motivo diz a ação")
+    class Refusal {
+
+        @Test
+        @DisplayName("código não informado: o canal pede o código")
+        void codigo_nao_informado() throws Exception {
+
+            denied(RefusalKind.CODE_REQUIRED);
+
+            assertThat(response.getStatus()).isEqualTo(403);
+            assertThat(response.getContentAsString())
+                    .contains("\"error\":\"denied\"")
+                    .contains("\"reason\":\"code_required\"");
+        }
+
+        @Test
+        @DisplayName("código incorreto: o canal pede outro código")
+        void codigo_incorreto() throws Exception {
+
+            denied(RefusalKind.CODE_INVALID);
+
+            assertThat(response.getStatus()).isEqualTo(403);
+            assertThat(response.getContentAsString()).contains("\"reason\":\"code_invalid\"");
+        }
+
+        @Test
+        @DisplayName("sem autenticador cadastrado: nenhum código resolve")
+        void sem_autenticador() throws Exception {
+
+            denied(RefusalKind.FACTOR_REQUIRED);
+
+            assertThat(response.getStatus()).isEqualTo(403);
+            assertThat(response.getContentAsString()).contains("\"reason\":\"factor_required\"");
+        }
+
+        @Test
+        @DisplayName("corpo fora do contrato: repetir não muda nada")
+        void corpo_fora_do_contrato() throws Exception {
+
+            denied(RefusalKind.PAYLOAD_INVALID);
+
+            assertThat(response.getStatus()).isEqualTo(400);
+            assertThat(response.getContentAsString())
+                    .contains("\"error\":\"invalid_request\"")
+                    .contains("\"reason\":\"payload_invalid\"");
+        }
+
+        @Test
+        @DisplayName("recusa sem causa reconhecida")
+        void sem_causa_reconhecida() throws Exception {
+
+            denied(RefusalKind.DENIED);
+
+            assertThat(response.getStatus()).isEqualTo(403);
+            assertThat(response.getContentAsString()).contains("\"reason\":\"denied\"");
+        }
+
+        @Test
+        @DisplayName("recusas que não vêm do provedor não trazem motivo")
+        void sem_motivo_quando_nao_ha() throws Exception {
+
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
+            when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
+            when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
+                    .thenReturn(AuthorizationResult.sessionRequired());
+
+            filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
+
+            assertThat(response.getStatus()).isEqualTo(401);
+            assertThat(response.getContentAsString())
+                    .contains("\"error\":\"session_required\"")
+                    .doesNotContain("reason");
+        }
+
+        private void denied(RefusalKind refusal) throws Exception {
+
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
+            when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
+            when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
+                    .thenReturn(AuthorizationResult.denied(refusal));
+
+            filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
         }
     }
 
@@ -288,7 +344,7 @@ class ProxyFilterTest {
         void recusa_delimitacao_ambigua() throws Exception {
 
             when(forwarder.framingRejection(any())).thenReturn(
-                    java.util.Optional.of(RequestForwarder.RejectionReason.AMBIGUOUS_FRAMING));
+                    Optional.of(RequestForwarder.RejectionReason.AMBIGUOUS_FRAMING));
 
             filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
 
@@ -297,20 +353,22 @@ class ProxyFilterTest {
         }
 
         @Test
+        @DisplayName("o corpo do erro acompanha o estado")
         void recusa_corpo_acima_do_teto() throws Exception {
 
             when(forwarder.framingRejection(any())).thenReturn(
-                    java.util.Optional.of(RequestForwarder.RejectionReason.PAYLOAD_TOO_LARGE));
+                    Optional.of(RequestForwarder.RejectionReason.PAYLOAD_TOO_LARGE));
 
             filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
 
             assertThat(response.getStatus()).isEqualTo(413);
+            assertThat(response.getContentAsString()).contains("payload_too_large");
         }
 
         @Test
         void recusa_caminho_que_a_comparacao_nao_alcanca() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
 
             filter.doFilter(request("/api/v1/../pix"), response, new MockFilterChain());
 
@@ -326,25 +384,44 @@ class ProxyFilterTest {
         @Test
         void aproveita_o_recebido() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
 
             MockHttpServletRequest request = request(OPEN_PATH);
             request.addHeader(CORRELATION_HEADER, "correlacao-do-canal");
 
             filter.doFilter(request, response, new MockFilterChain());
 
-            assertThat(response.getHeader(CORRELATION_HEADER))
-                    .isEqualTo("correlacao-do-canal");
+            assertThat(response.getHeader(CORRELATION_HEADER)).isEqualTo("correlacao-do-canal");
         }
 
         @Test
         void gera_quando_nao_ha() throws Exception {
 
-            when(forwarder.framingRejection(any())).thenReturn(java.util.Optional.empty());
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
 
             filter.doFilter(request(OPEN_PATH), response, new MockFilterChain());
 
             assertThat(response.getHeader(CORRELATION_HEADER)).isNotBlank();
+        }
+    }
+
+    @Nested
+    @DisplayName("Proteção das respostas escritas pelo componente")
+    class SecurityHeaders {
+
+        @Test
+        void marca_as_respostas_do_componente() throws Exception {
+
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
+            when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
+            when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
+                    .thenReturn(AuthorizationResult.authorized(new TokenReference(TOKEN_REF)));
+
+            filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
+
+            assertThat(response.getHeader("Strict-Transport-Security")).isNotBlank();
+            assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
+            assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
         }
     }
 

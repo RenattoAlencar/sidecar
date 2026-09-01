@@ -166,20 +166,6 @@ class AuthorizationOrchestratorTest {
         }
 
         @Test
-        @DisplayName("a recusa carrega o que ela significa para o canal")
-        void recusa_carrega_a_classificacao() {
-
-            when(journeyClient.start(anyString(), anyString(), any(), any()))
-                    .thenReturn(JourneyOutcome.denied("014"));
-
-            AuthorizationResult result =
-                    orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
-
-            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
-            assertThat(result.refusal()).isEqualTo(RefusalKind.INVALID_REQUEST);
-        }
-
-        @Test
         void sessao_vencida_vira_expiracao() {
 
             when(journeyClient.start(anyString(), anyString(), any(), any()))
@@ -189,6 +175,77 @@ class AuthorizationOrchestratorTest {
                     orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
 
             assertThat(result.type()).isEqualTo(AuthorizationResult.Type.EXPIRED);
+        }
+    }
+
+    @Nested
+    @DisplayName("Nem tudo que o provedor recusa é recusa de autorização")
+    class RefusalTranslation {
+
+        @Test
+        @DisplayName("sessão do canal recusada pede renovação, não código novo")
+        void sessao_do_canal_recusada() {
+
+            AuthorizationResult result = denied("001");
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.EXPIRED);
+        }
+
+        @Test
+        @DisplayName("falha do provedor é indisponibilidade: o titular não tem o que corrigir")
+        void falha_do_provedor() {
+
+            AuthorizationResult result = denied("006");
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.UNAVAILABLE);
+        }
+
+        @Test
+        @DisplayName("código não informado")
+        void codigo_nao_informado() {
+
+            AuthorizationResult result = denied("002");
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
+            assertThat(result.refusal()).isEqualTo(RefusalKind.CODE_REQUIRED);
+        }
+
+        @Test
+        @DisplayName("código incorreto")
+        void codigo_incorreto() {
+
+            AuthorizationResult result = denied("003");
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
+            assertThat(result.refusal()).isEqualTo(RefusalKind.CODE_INVALID);
+        }
+
+        @Test
+        @DisplayName("corpo fora do contrato")
+        void corpo_fora_do_contrato() {
+
+            AuthorizationResult result = denied("014");
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
+            assertThat(result.refusal()).isEqualTo(RefusalKind.PAYLOAD_INVALID);
+        }
+
+        @Test
+        @DisplayName("código não mapeado vira recusa genérica")
+        void codigo_desconhecido() {
+
+            AuthorizationResult result = denied("007");
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
+            assertThat(result.refusal()).isEqualTo(RefusalKind.DENIED);
+        }
+
+        private AuthorizationResult denied(String code) {
+
+            when(journeyClient.start(anyString(), anyString(), any(), any()))
+                    .thenReturn(JourneyOutcome.denied(code));
+
+            return orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD, RULE);
         }
     }
 

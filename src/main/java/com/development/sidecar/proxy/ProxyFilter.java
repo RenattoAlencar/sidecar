@@ -35,6 +35,16 @@ public class ProxyFilter extends OncePerRequestFilter {
 
     private static final String PASSTHROUGH_RULE = "passthrough";
 
+    private static final String ERROR_BAD_REQUEST = "bad_request";
+    private static final String ERROR_INVALID_REQUEST = "invalid_request";
+    private static final String ERROR_DENIED = "denied";
+    private static final String ERROR_SESSION_EXPIRED = "session_expired";
+    private static final String ERROR_SESSION_REQUIRED = "session_required";
+    private static final String ERROR_AUTHORIZATION_REQUIRED = "authorization_required";
+    private static final String ERROR_PAYLOAD_TOO_LARGE = "payload_too_large";
+    private static final String ERROR_BAD_GATEWAY = "bad_gateway";
+    private static final String ERROR_UNAVAILABLE = "authorization_unavailable";
+
     private final RouteResolver routeResolver;
     private final RequestForwarder requestForwarder;
     private final AuthorizationOrchestrator orchestrator;
@@ -106,7 +116,7 @@ public class ProxyFilter extends OncePerRequestFilter {
             case REJECT -> {
                 log.warn("Requisição recusada na normalização: motivo={}",
                         decision.rejectionReason());
-                responseWriter.error(response, HttpStatus.BAD_REQUEST, "bad_request",
+                responseWriter.error(response, HttpStatus.BAD_REQUEST, ERROR_BAD_REQUEST,
                         correlationId);
             }
 
@@ -148,7 +158,7 @@ public class ProxyFilter extends OncePerRequestFilter {
             payload = requestForwarder.readBody(request);
 
         } catch (RequestForwarder.PayloadTooLargeException e) {
-            responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large",
+            responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, ERROR_PAYLOAD_TOO_LARGE,
                     correlationId);
             return;
         }
@@ -174,7 +184,7 @@ public class ProxyFilter extends OncePerRequestFilter {
             body = requestForwarder.readBody(request);
 
         } catch (RequestForwarder.PayloadTooLargeException e) {
-            responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large",
+            responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, ERROR_PAYLOAD_TOO_LARGE,
                     correlationId);
             return;
         }
@@ -225,19 +235,19 @@ public class ProxyFilter extends OncePerRequestFilter {
             case DENIED -> denied(response, result, correlationId);
 
             case EXPIRED -> responseWriter.error(response, HttpStatus.UNAUTHORIZED,
-                    "session_expired", correlationId);
+                    ERROR_SESSION_EXPIRED, correlationId);
 
             case SESSION_REQUIRED -> responseWriter.error(response, HttpStatus.UNAUTHORIZED,
-                    "session_required", correlationId);
+                    ERROR_SESSION_REQUIRED, correlationId);
 
             case AUTHORIZATION_REQUIRED -> responseWriter.error(response, HttpStatus.UNAUTHORIZED,
-                    "authorization_required", correlationId);
+                    ERROR_AUTHORIZATION_REQUIRED, correlationId);
 
             case BAD_REQUEST -> responseWriter.error(response, HttpStatus.BAD_REQUEST,
-                    "bad_request", correlationId);
+                    ERROR_BAD_REQUEST, correlationId);
 
             case UNAVAILABLE -> responseWriter.error(response, HttpStatus.SERVICE_UNAVAILABLE,
-                    "authorization_unavailable", correlationId);
+                    ERROR_UNAVAILABLE, correlationId);
         }
     }
 
@@ -245,12 +255,16 @@ public class ProxyFilter extends OncePerRequestFilter {
                         AuthorizationResult result,
                         String correlationId) throws IOException {
 
-        if (result.refusal() == RefusalKind.INVALID_REQUEST) {
-            responseWriter.error(response, HttpStatus.BAD_REQUEST, "invalid_request",
-                    correlationId);
+        RefusalKind refusal = result.refusal() == null ? RefusalKind.DENIED : result.refusal();
+
+        if (refusal.isRequestProblem()) {
+            responseWriter.error(response, HttpStatus.BAD_REQUEST, ERROR_INVALID_REQUEST,
+                    refusal.reason(), correlationId);
             return;
         }
-        responseWriter.error(response, HttpStatus.FORBIDDEN, "denied", correlationId);
+
+        responseWriter.error(response, HttpStatus.FORBIDDEN, ERROR_DENIED,
+                refusal.reason(), correlationId);
     }
 
     private void forward(HttpServletRequest request,
@@ -269,17 +283,19 @@ public class ProxyFilter extends OncePerRequestFilter {
 
         } catch (RequestForwarder.InvalidTargetException e) {
             log.warn("Requisição recusada na construção do destino");
-            responseWriter.error(response, HttpStatus.BAD_REQUEST, "bad_request", correlationId);
+            responseWriter.error(response, HttpStatus.BAD_REQUEST, ERROR_BAD_REQUEST,
+                    correlationId);
 
         } catch (RequestForwarder.PayloadTooLargeException e) {
             log.warn("Corpo acima do teto durante o encaminhamento");
-            responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large",
+            responseWriter.error(response, HttpStatus.PAYLOAD_TOO_LARGE, ERROR_PAYLOAD_TOO_LARGE,
                     correlationId);
 
         } catch (RequestForwarder.UpstreamException e) {
             log.error("Falha ao encaminhar ao serviço de negócio");
             log.debug("Detalhe da falha no encaminhamento", e);
-            responseWriter.error(response, HttpStatus.BAD_GATEWAY, "bad_gateway", correlationId);
+            responseWriter.error(response, HttpStatus.BAD_GATEWAY, ERROR_BAD_GATEWAY,
+                    correlationId);
 
         } finally {
             metrics.forwarded(sample, rule);
@@ -295,7 +311,12 @@ public class ProxyFilter extends OncePerRequestFilter {
                 : HttpStatus.BAD_REQUEST;
 
         log.warn("Requisição recusada antes da matriz: motivo={}", reason);
-        responseWriter.error(response, status, "bad_request", correlationId);
+
+        responseWriter.error(response, status,
+                status == HttpStatus.PAYLOAD_TOO_LARGE
+                        ? ERROR_PAYLOAD_TOO_LARGE
+                        : ERROR_BAD_REQUEST,
+                correlationId);
     }
 
     private static String header(HttpServletRequest request, String name) {

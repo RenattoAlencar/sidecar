@@ -5,20 +5,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 public class ChannelResponseWriter {
 
     private static final Logger log = LoggerFactory.getLogger(ChannelResponseWriter.class);
 
-    public static final String AUTHORIZATION_REQUIRED_HEADER = "x-authz-required";
 
-    private static final String ERROR_FIELD = "error";
-    private static final String CORRELATION_FIELD = "correlationId";
+    public static final String AUTHORIZATION_REQUIRED_HEADER = "x-authz-required";
 
     private static final int MAX_HEADER_VALUE_LENGTH = 64;
 
@@ -51,11 +48,16 @@ public class ChannelResponseWriter {
                       String error,
                       String correlationId) throws IOException {
 
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put(ERROR_FIELD, error);
-        body.put(CORRELATION_FIELD, correlationId);
+        error(response, status, error, null, correlationId);
+    }
 
-        write(response, status, body, correlationId);
+    public void error(HttpServletResponse response,
+                      HttpStatus status,
+                      String error,
+                      String reason,
+                      String correlationId) throws IOException {
+
+        write(response, status, new ErrorResponse(error, reason, correlationId), correlationId);
     }
 
     private void write(HttpServletResponse response,
