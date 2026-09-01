@@ -54,6 +54,10 @@ dados entre as duas chamadas.
 Os três primeiros cobrem o fluxo normal. O `x-porto-authz-session` só aparece
 quando há desafio, explicado adiante.
 
+> **A resposta a um desafio não vai em cabeçalho.** Ela vai no corpo, no campo
+> `authz.response` — porque pode ser grande demais para caber num cabeçalho.
+> Veja a seção de desafio.
+
 ---
 
 ## O fluxo em duas chamadas
