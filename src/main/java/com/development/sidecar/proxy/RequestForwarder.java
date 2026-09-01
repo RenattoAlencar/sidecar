@@ -5,13 +5,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -54,6 +54,11 @@ public class RequestForwarder {
         PAYLOAD_TOO_LARGE
     }
 
+    /**
+     * Recusa antes de ler o corpo requisições cuja delimitação é ambígua:
+     * comprimento e codificação declarados juntos, comprimentos divergentes, ou
+     * acima do teto.
+     */
     public Optional<RejectionReason> framingRejection(HttpServletRequest request) {
 
         boolean hasTransferEncoding = request.getHeader(TRANSFER_ENCODING_HEADER) != null;
@@ -82,6 +87,9 @@ public class RequestForwarder {
         return Optional.empty();
     }
 
+    /**
+     * Lê o corpo inteiro, respeitando o teto configurado.
+     */
     public byte[] readBody(HttpServletRequest request) throws IOException {
 
         if (BODYLESS_METHODS.contains(request.getMethod())) {
@@ -101,6 +109,16 @@ public class RequestForwarder {
         forward(request, response, injected, null);
     }
 
+    /**
+     * Encaminha ao serviço de negócio.
+     * <p>
+     * <strong>O destino é conferido aqui, na linha anterior ao envio.</strong> A
+     * construção já faz a mesma conferência; esta se repete de propósito, no
+     * mesmo escopo da chamada, para que nenhum caminho até o envio possa
+     * alcançá-lo sem passar por ela.
+     *
+     * @param body corpo a enviar; {@code null} lê da requisição
+     */
     public void forward(HttpServletRequest request,
                         HttpServletResponse response,
                         Map<String, String> injected,
@@ -131,6 +149,18 @@ public class RequestForwarder {
         copyResponse(upstreamResponse, response);
     }
 
+    /**
+     * Monta o destino a partir do alvo configurado e do caminho recebido.
+     * <p>
+     * Esquema, servidor e porta são escritos a partir do alvo; caminho e consulta
+     * ocupam apenas as posições que lhes cabem. Não há concatenação de texto
+     * entre os dois, e nada do que vem de fora alcança a parte que define para
+     * onde a requisição vai.
+     * <p>
+     * A construção assume valores já codificados: o caminho passou pela
+     * normalização da rota, que recusa codificação percentual, e a consulta passa
+     * pela conferência abaixo.
+     */
     private URI buildTargetUri(HttpServletRequest request) {
 
         URI target = properties.target();
@@ -144,16 +174,16 @@ public class RequestForwarder {
 
         URI candidate;
         try {
-            candidate = new URI(
-                    target.getScheme(),
-                    null,
-                    target.getHost(),
-                    target.getPort(),
-                    path,
-                    queryString == null || queryString.isEmpty() ? null : queryString,
-                    null);
+            candidate = UriComponentsBuilder.newInstance()
+                    .scheme(target.getScheme())
+                    .host(target.getHost())
+                    .port(target.getPort())
+                    .path(path)
+                    .query(queryString)
+                    .build(true)
+                    .toUri();
 
-        } catch (URISyntaxException e) {
+        } catch (IllegalArgumentException e) {
             log.warn("Destino não pôde ser construído a partir do caminho recebido");
             throw new InvalidTargetException("Destino inválido", e);
         }
@@ -163,6 +193,12 @@ public class RequestForwarder {
         return candidate;
     }
 
+    /**
+     * Confere que o destino aponta para o alvo configurado.
+     * <p>
+     * É a barreira antes de a requisição sair: sem ela, o componente poderia
+     * enviar a um servidor escolhido por quem chama.
+     */
     private static void requireSameDestination(URI candidate, URI target) {
 
         boolean sameDestination = target.getScheme() != null
@@ -177,6 +213,13 @@ public class RequestForwarder {
         }
     }
 
+    /**
+     * Recusa o que mudaria o significado da URI depois de montada.
+     * <p>
+     * O fragmento descarta tudo que vem depois dele; a contrabarra é
+     * interpretada como separador por alguns destinos; caracteres de controle
+     * atravessam para o registro e para a requisição de saída.
+     */
     private static void requireSafeQuery(String queryString) {
 
         for (int index = 0; index < queryString.length(); index++) {
@@ -210,6 +253,10 @@ public class RequestForwarder {
         return builder.build();
     }
 
+    /**
+     * Escreve por último os cabeçalhos que o componente acrescenta, para que
+     * prevaleçam sobre qualquer valor que tenha atravessado.
+     */
     private void appendInjectedHeaders(HttpRequest.Builder builder,
                                        Map<String, String> injected) {
 
@@ -264,6 +311,10 @@ public class RequestForwarder {
         }
     }
 
+    /**
+     * Acrescenta o próprio salto à cadeia de encaminhamento, em vez de
+     * sobrescrevê-la.
+     */
     private void appendForwardedHeaders(HttpServletRequest request, HttpRequest.Builder builder) {
 
         String existingChain = joinValues(request.getHeaders(FORWARDED_FOR_HEADER));
@@ -314,6 +365,9 @@ public class RequestForwarder {
         }
     }
 
+    /**
+     * Remove do que vai para o registro o que inventaria entradas novas.
+     */
     private static String sanitize(String value) {
 
         if (value == null) {
@@ -372,6 +426,9 @@ public class RequestForwarder {
         return false;
     }
 
+    /**
+     * Corta a leitura ao ultrapassar o teto, sem reter o corpo em memória.
+     */
     static final class LimitedInputStream extends FilterInputStream {
 
         private final long limit;
@@ -418,6 +475,9 @@ public class RequestForwarder {
         }
     }
 
+    /**
+     * O destino não respondeu, ou o contato falhou.
+     */
     public static class UpstreamException extends RuntimeException {
 
         public UpstreamException(String message, Throwable cause) {
@@ -425,6 +485,12 @@ public class RequestForwarder {
         }
     }
 
+    /**
+     * O destino não pôde ser construído a partir do que foi recebido.
+     * <p>
+     * Distinta da falha de contato: aqui o problema é a requisição, e repetir
+     * produz o mesmo resultado.
+     */
     public static class InvalidTargetException extends RuntimeException {
 
         public InvalidTargetException(String message) {
