@@ -107,6 +107,9 @@ public class RequestForwarder {
                         byte[] body) throws IOException {
 
         URI targetUri = buildTargetUri(request);
+
+        requireSameDestination(targetUri, properties.target());
+
         HttpRequest upstreamRequest = buildUpstreamRequest(request, targetUri, injected, body);
 
         HttpResponse<InputStream> upstreamResponse;
