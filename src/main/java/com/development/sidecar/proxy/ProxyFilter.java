@@ -89,11 +89,38 @@ public class ProxyFilter extends OncePerRequestFilter {
         try {
             handle(request, response, correlationId);
 
+        } catch (Exception e) {
+            unexpected(response, correlationId, e);
+
         } finally {
             if (!response.isCommitted()) {
                 response.setHeader(proxyProperties.correlationHeader(), correlationId);
             }
             MDC.remove(CorrelationId.MDC_KEY);
+        }
+    }
+
+    /**
+     * Última barreira: o canal recebe o mesmo formato de sempre, aconteça o que
+     * acontecer.
+     * <p>
+     * Sem isto, uma falha não prevista sobe para o contêiner e o canal recebe a
+     * página de erro padrão — em HTML, sem identificador de correlação, e sem
+     * nada que ligue o ocorrido aos registros do componente.
+     */
+    private void unexpected(HttpServletResponse response,
+                            String correlationId,
+                            Exception cause) {
+
+        log.error("Falha não prevista no processamento da requisição");
+        log.debug("Detalhe da falha não prevista", cause);
+
+        try {
+            responseWriter.error(response, HttpStatus.SERVICE_UNAVAILABLE,
+                    ERROR_UNAVAILABLE, correlationId);
+
+        } catch (Exception writing) {
+            log.error("Falha ao escrever a recusa da falha não prevista");
         }
     }
 
@@ -129,6 +156,9 @@ public class ProxyFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Distingue os três momentos pela presença dos cabeçalhos do canal.
+     */
     private void intercept(HttpServletRequest request,
                            HttpServletResponse response,
                            RouteDecision decision,
@@ -148,6 +178,10 @@ public class ProxyFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Primeira apresentação: o corpo da transação segue ao provedor como veio, e
+     * o código do autenticador, quando o canal já o tem, vem em cabeçalho.
+     */
     private void start(HttpServletRequest request,
                        HttpServletResponse response,
                        RouteDecision decision,
@@ -173,6 +207,13 @@ public class ProxyFilter extends OncePerRequestFilter {
         apply(request, response, result, decision, correlationId, payload);
     }
 
+    /**
+     * Resposta ao desafio: a sessão vem em cabeçalho, a resposta vem no corpo.
+     * <p>
+     * O corpo desta chamada não segue adiante — nem ao provedor, que recebe
+     * apenas o callback, nem ao serviço de negócio, porque a chamada termina
+     * aqui.
+     */
     private void advance(HttpServletRequest request,
                          HttpServletResponse response,
                          String sessionId,
@@ -197,6 +238,9 @@ public class ProxyFilter extends OncePerRequestFilter {
         apply(request, response, result, decision, correlationId, null);
     }
 
+    /**
+     * Efetivação: troca a referência pelo token e encaminha.
+     */
     private void effect(HttpServletRequest request,
                         HttpServletResponse response,
                         String tokenRef,
@@ -251,6 +295,13 @@ public class ProxyFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Traduz a recusa: o estado diz a família, o motivo diz a ação.
+     * <p>
+     * O motivo é nome próprio do componente, não o código do provedor: cada
+     * jornada tem a sua numeração, e uma delas mudar não pode mudar o contrato do
+     * canal junto.
+     */
     private void denied(HttpServletResponse response,
                         AuthorizationResult result,
                         String correlationId) throws IOException {

@@ -91,6 +91,41 @@ class ProxyFilterTest {
     }
 
     @Nested
+    @DisplayName("Falha não prevista")
+    class Unexpected {
+
+        @Test
+        @DisplayName("o canal recebe indisponibilidade, no formato de sempre")
+        void vira_indisponibilidade() throws Exception {
+
+            when(forwarder.framingRejection(any()))
+                    .thenThrow(new RuntimeException("falha inesperada"));
+
+            filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
+
+            assertThat(response.getStatus()).isEqualTo(503);
+            assertThat(response.getContentAsString())
+                    .contains("\"error\":\"authorization_unavailable\"")
+                    .contains("correlationId");
+        }
+
+        @Test
+        @DisplayName("a correlação acompanha mesmo a falha não prevista")
+        void mantem_a_correlacao() throws Exception {
+
+            when(forwarder.framingRejection(any()))
+                    .thenThrow(new RuntimeException("falha inesperada"));
+
+            MockHttpServletRequest request = request(PROTECTED_PATH);
+            request.addHeader(CORRELATION_HEADER, "correlacao-do-canal");
+
+            filter.doFilter(request, response, new MockFilterChain());
+
+            assertThat(response.getContentAsString()).contains("correlacao-do-canal");
+        }
+    }
+
+    @Nested
     @DisplayName("Escolha do caminho")
     class Routing {
 
