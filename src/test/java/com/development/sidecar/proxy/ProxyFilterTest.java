@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -59,8 +60,11 @@ class ProxyFilterTest {
     private static final String TOKEN_REF_HEADER = "x-authz-token-ref";
     private static final String CORRELATION_HEADER = "x-correlation-id";
 
-    private static final String TOKEN_REF = "84da0844-d1f9-31f9-b4f4-79b420be8be4";
-    private static final String ACCESS_TOKEN = "opaco-do-provedor";
+    private static final String TOKEN_REF = "fake.referencia.Lp2";
+    private static final String ACCESS_TOKEN = "fake.acesso.Wq5";
+    private static final String SESSION = "fake.sessao.Qm7";
+    private static final String CODE = "fake.codigo.039";
+
     private static final String BODY = "{\"channel\":{},\"risk\":{}}";
 
     @Mock
@@ -161,17 +165,34 @@ class ProxyFilterTest {
 
             when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
             when(forwarder.readBody(any()))
-                    .thenReturn("{\"authz\":{\"response\":\"149707\"}}"
+                    .thenReturn(("{\"authz\":{\"response\":\"" + CODE + "\"}}")
                             .getBytes(StandardCharsets.UTF_8));
             when(orchestrator.advance(anyString(), anyString(), anyString()))
                     .thenReturn(AuthorizationResult.authorized(new TokenReference(TOKEN_REF)));
 
             MockHttpServletRequest request = request(PROTECTED_PATH);
-            request.addHeader(SESSION_HEADER, "sessao");
+            request.addHeader(SESSION_HEADER, SESSION);
 
             filter.doFilter(request, response, new MockFilterChain());
 
-            verify(orchestrator).advance(eq("sessao"), eq("149707"), anyString());
+            verify(orchestrator).advance(eq(SESSION), eq(CODE), anyString());
+        }
+
+        @Test
+        @DisplayName("sem resposta no corpo, a continuação consulta o desfecho")
+        void continua_sem_resposta() throws Exception {
+
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
+            when(forwarder.readBody(any())).thenReturn("{}".getBytes(StandardCharsets.UTF_8));
+            when(orchestrator.advance(anyString(), isNull(), anyString()))
+                    .thenReturn(AuthorizationResult.authorized(new TokenReference(TOKEN_REF)));
+
+            MockHttpServletRequest request = request(PROTECTED_PATH);
+            request.addHeader(SESSION_HEADER, SESSION);
+
+            filter.doFilter(request, response, new MockFilterChain());
+
+            verify(orchestrator).advance(eq(SESSION), isNull(), anyString());
         }
 
         @Test
@@ -200,7 +221,7 @@ class ProxyFilterTest {
 
             MockHttpServletRequest request = request(PROTECTED_PATH);
             request.addHeader(TOKEN_REF_HEADER, TOKEN_REF);
-            request.addHeader(SESSION_HEADER, "sessao");
+            request.addHeader(SESSION_HEADER, SESSION);
 
             filter.doFilter(request, response, new MockFilterChain());
 
@@ -254,6 +275,24 @@ class ProxyFilterTest {
             assertThat(response.getStatus()).isEqualTo(428);
             assertThat(response.getHeader("x-authz-required")).isEqualTo("true");
             assertThat(response.getContentAsString()).contains("\"type\":\"OTP\"");
+        }
+
+        @Test
+        @DisplayName("desafio cumprido fora do canal traz o endereço e a espera")
+        void desafio_fora_do_canal() throws Exception {
+
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
+            when(forwarder.readBody(any())).thenReturn(BODY.getBytes(StandardCharsets.UTF_8));
+            when(orchestrator.start(anyString(), any(), any(), any(), anyString()))
+                    .thenReturn(AuthorizationResult.challenge(handoffStep()));
+
+            filter.doFilter(request(PROTECTED_PATH), response, new MockFilterChain());
+
+            assertThat(response.getStatus()).isEqualTo(428);
+            assertThat(response.getContentAsString())
+                    .contains("\"type\":\"DEEPLINK\"")
+                    .contains("\"target\":\"app://exemplo/desafio\"")
+                    .contains("\"retryAfter\":8000");
         }
 
         @Test
@@ -470,10 +509,18 @@ class ProxyFilterTest {
     }
 
     private static JourneyStep challengeStep() {
-        return new JourneyStep("sessao", List.of(Map.of(
+        return new JourneyStep(SESSION, List.of(Map.of(
                 "type", "NameCallback",
                 "output", List.of(Map.of("name", "prompt", "value", "CHALLENGE_REQUIRED")),
                 "input", List.of(Map.of("name", "IDToken1", "value", "OTP:AUTHFY")))), null);
+    }
+
+    private static JourneyStep handoffStep() {
+        return new JourneyStep(SESSION, List.of(Map.of(
+                "type", "PollingWaitCallback",
+                "output", List.of(
+                        Map.of("name", "waitTime", "value", "8000"),
+                        Map.of("name", "message", "value", "app://exemplo/desafio")))), null);
     }
 
     private static AccessToken accessToken() {

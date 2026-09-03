@@ -12,10 +12,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ChallengeMapperTest {
 
-    private static final String AUTH_ID = "eyJ0eXAiOiJKV1Qi...";
+    private static final String AUTH_ID = "fake.sessao.Qm7";
+    private static final String DEEPLINK = "app://exemplo/empresa/pdc?authIndexValue=abc123";
 
     @Nested
-    @DisplayName("Tipo do desafio")
+    @DisplayName("Desafio que o canal cumpre")
     class ChallengeType {
 
         @Test
@@ -82,6 +83,92 @@ class ChallengeMapperTest {
 
             assertThat(response.challenge().type()).isEqualTo("OTP");
         }
+
+        @Test
+        @DisplayName("não traz endereço nem espera: o canal cumpre e responde")
+        void nao_traz_endereco_nem_espera() {
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(
+                    stepWith(nameCallback("CHALLENGE_REQUIRED", "OTP:AUTHFY")));
+
+            assertThat(response.challenge().target()).isNull();
+            assertThat(response.challenge().retryAfter()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("Desafio cumprido fora do canal")
+    class Handoff {
+
+        @Test
+        @DisplayName("o callback de espera vira endereço a abrir e tempo a aguardar")
+        void traduz_a_espera() {
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(
+                    stepWith(pollingCallback("8000", DEEPLINK)));
+
+            assertThat(response.challenge().type()).isEqualTo("DEEPLINK");
+            assertThat(response.challenge().target()).isEqualTo(DEEPLINK);
+            assertThat(response.challenge().retryAfter()).isEqualTo(8000L);
+        }
+
+        @Test
+        @DisplayName("não traz provedor: não há com quem cumprir, e sim onde")
+        void nao_traz_provedor() {
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(
+                    stepWith(pollingCallback("8000", DEEPLINK)));
+
+            assertThat(response.challenge().provider()).isNull();
+        }
+
+        @Test
+        @DisplayName("o endereço atravessa como o provedor o escreveu")
+        void preserva_o_endereco() {
+
+            String withQuery = "app://empresa/pdc?realm=%2Falpha&authIndexType=transaction";
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(
+                    stepWith(pollingCallback("5000", withQuery)));
+
+            assertThat(response.challenge().target()).isEqualTo(withQuery);
+        }
+
+        @Test
+        @DisplayName("espera ilegível não atravessa")
+        void espera_ilegivel() {
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(
+                    stepWith(pollingCallback("oito mil", DEEPLINK)));
+
+            assertThat(response.challenge().type()).isEqualTo("DEEPLINK");
+            assertThat(response.challenge().retryAfter()).isNull();
+        }
+
+        @Test
+        @DisplayName("endereço com caractere de controle não atravessa")
+        void endereco_com_caractere_de_controle() {
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(
+                    stepWith(pollingCallback("8000", "app://exemplo\ninjecao")));
+
+            assertThat(response.challenge().target()).isNull();
+        }
+
+        @Test
+        @DisplayName("a espera é reconhecida mesmo sem mensagem")
+        void espera_sem_endereco() {
+
+            Map<String, Object> polling = Map.of(
+                    "type", "PollingWaitCallback",
+                    "output", List.of(Map.of("name", "waitTime", "value", "8000")));
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(stepWith(polling));
+
+            assertThat(response.challenge().type()).isEqualTo("DEEPLINK");
+            assertThat(response.challenge().target()).isNull();
+            assertThat(response.challenge().retryAfter()).isEqualTo(8000L);
+        }
     }
 
     @Nested
@@ -93,21 +180,6 @@ class ChallengeMapperTest {
 
             ChallengeResponse response = ChallengeMapper.toChallenge(
                     new JourneyStep(AUTH_ID, List.of(), null));
-
-            assertThat(response.challenge().type()).isEqualTo("UNKNOWN");
-        }
-
-        @Test
-        @DisplayName("callback de espera não nomeia desafio")
-        void callback_de_espera() {
-
-            Map<String, Object> polling = Map.of(
-                    "type", "PollingWaitCallback",
-                    "output", List.of(
-                            Map.of("name", "waitTime", "value", "5000"),
-                            Map.of("name", "message", "value", "Please wait...")));
-
-            ChallengeResponse response = ChallengeMapper.toChallenge(stepWith(polling));
 
             assertThat(response.challenge().type()).isEqualTo("UNKNOWN");
         }
@@ -136,6 +208,16 @@ class ChallengeMapperTest {
             assertThat(response.sessionId()).isEqualTo(AUTH_ID);
             assertThat(response.authorizationRequired()).isTrue();
         }
+
+        @Test
+        void devolve_a_sessao_tambem_na_espera() {
+
+            ChallengeResponse response = ChallengeMapper.toChallenge(
+                    stepWith(pollingCallback("8000", DEEPLINK)));
+
+            assertThat(response.sessionId()).isEqualTo(AUTH_ID);
+            assertThat(response.authorizationRequired()).isTrue();
+        }
     }
 
     private static JourneyStep stepWith(Map<String, Object> callback) {
@@ -147,5 +229,13 @@ class ChallengeMapperTest {
                 "type", "NameCallback",
                 "output", List.of(Map.of("name", "prompt", "value", prompt)),
                 "input", List.of(Map.of("name", "IDToken1", "value", suggested)));
+    }
+
+    private static Map<String, Object> pollingCallback(String waitTime, String message) {
+        return Map.of(
+                "type", "PollingWaitCallback",
+                "output", List.of(
+                        Map.of("name", "waitTime", "value", waitTime),
+                        Map.of("name", "message", "value", message)));
     }
 }

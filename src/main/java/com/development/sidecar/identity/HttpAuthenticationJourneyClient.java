@@ -71,11 +71,20 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
             throw new JourneyUnavailableException("Jornada sem identificador ao continuar");
         }
 
-        log.info("Continuando a jornada: respondendo o desafio");
+        boolean answering = response != null && !response.isBlank();
+
+        if (answering) {
+            log.info("Continuando a jornada: respondendo o desafio");
+        } else {
+            log.info("Continuando a jornada: consultando o desfecho");
+        }
 
         try {
-            return post("continuação", null,
-                    JourneyRequest.answering(sessionId, CHALLENGE_PROMPT, response));
+            Map<String, Object> body = answering
+                    ? JourneyRequest.answering(sessionId, CHALLENGE_PROMPT, response)
+                    : JourneyRequest.asking(sessionId);
+
+            return post("continuação", null, body);
 
         } catch (JourneyRequest.JourneyRequestException e) {
             throw new JourneyUnavailableException("Não foi possível montar a continuação", e);

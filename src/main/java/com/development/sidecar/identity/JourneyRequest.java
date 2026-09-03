@@ -5,6 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Corpo das chamadas de continuação, no formato que o provedor especifica.
+ */
 final class JourneyRequest {
 
     private static final String AUTH_ID_FIELD = "authId";
@@ -22,6 +25,13 @@ final class JourneyRequest {
     private JourneyRequest() {
     }
 
+    /**
+     * Devolve ao provedor o callback que ele emitiu, com a resposta preenchida.
+     * <p>
+     * <strong>Cópia, e não reconstrução.</strong> O provedor espera de volta a
+     * estrutura que enviou; remontá-la de memória obriga o componente a conhecer
+     * o formato de cada jornada.
+     */
     static Map<String, Object> answering(JourneyStep step, String value) {
 
         List<Map<String, Object>> callbacks = step.callbacks();
@@ -41,11 +51,15 @@ final class JourneyRequest {
         return body(step.authId(), answered);
     }
 
+    /**
+     * Monta a continuação sem o passo em mãos.
+     * <p>
+     * O componente não retém estado entre chamadas, e esta jornada emite um
+     * callback de cada vez, com forma conhecida.
+     */
     static Map<String, Object> answering(String authId, String prompt, String value) {
 
-        if (authId == null || authId.isBlank()) {
-            throw new JourneyRequestException("Continuação sem identificador de jornada");
-        }
+        requireSession(authId);
 
         Map<String, Object> callback = new LinkedHashMap<>();
         callback.put(TYPE_FIELD, NAME_CALLBACK);
@@ -53,6 +67,26 @@ final class JourneyRequest {
         callback.put(INPUT_FIELD, List.of(field(DEFAULT_INPUT_NAME, value)));
 
         return body(authId, List.of(callback));
+    }
+
+    /**
+     * Pergunta ao provedor se a jornada já concluiu.
+     * <p>
+     * Não há o que responder: o desafio está sendo cumprido em outro lugar, e
+     * apresentar a sessão sem callback algum é como o provedor espera que se
+     * pergunte pelo desfecho.
+     */
+    static Map<String, Object> asking(String authId) {
+
+        requireSession(authId);
+
+        return body(authId, List.of());
+    }
+
+    private static void requireSession(String authId) {
+        if (authId == null || authId.isBlank()) {
+            throw new JourneyRequestException("Continuação sem identificador de jornada");
+        }
     }
 
     private static Map<String, Object> body(String authId,
@@ -71,6 +105,12 @@ final class JourneyRequest {
         return field;
     }
 
+    /**
+     * Copia o callback escrevendo a resposta na primeira entrada.
+     * <p>
+     * Só o valor muda: o rótulo, o tipo e o nome do campo continuam sendo os que
+     * o provedor definiu.
+     */
     private static Map<String, Object> withValue(Map<String, Object> callback, String value) {
 
         Map<String, Object> copy = copyOf(callback);

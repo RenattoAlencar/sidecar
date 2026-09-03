@@ -19,6 +19,11 @@ public class AuthorizationOrchestrator {
         this.tokenCustodian = tokenCustodian;
     }
 
+    /**
+     * Primeira apresentação: inicia a jornada e submete o corpo.
+     *
+     * @param payload corpo como chegou do canal, repassado sem reserialização
+     */
     public AuthorizationResult start(String journey,
                                      String channelToken,
                                      String authenticatorCode,
@@ -55,12 +60,19 @@ public class AuthorizationOrchestrator {
         return apply(outcome, rule);
     }
 
+    /**
+     * Continuação da jornada apresentada antes.
+     * <p>
+     * Com resposta, apresenta o que o titular respondeu. Sem resposta, consulta o
+     * desfecho — é o caso do desafio cumprido fora do canal, em que nada é
+     * apresentado e o que se pergunta é se já concluiu.
+     * <p>
+     * Quem decide se a ausência de resposta serve é o provedor: um desafio que a
+     * exige recusa a continuação, e a recusa chega ao canal traduzida.
+     *
+     * @param response o que o titular respondeu; nunca vai para log
+     */
     public AuthorizationResult advance(String sessionId, String response, String rule) {
-
-        if (response == null || response.isBlank()) {
-            log.warn("Continuação sem resposta ao desafio: regra={}", rule);
-            return AuthorizationResult.badRequest();
-        }
 
         log.info("Continuando a jornada: regra={}", rule);
 
@@ -77,6 +89,9 @@ public class AuthorizationOrchestrator {
         return apply(outcome, rule);
     }
 
+    /**
+     * Efetivação: troca a referência apresentada pelo canal pelo token guardado.
+     */
     public AuthorizationResult resolve(String tokenRef, String rule) {
 
         log.info("Resolvendo referência: regra={}", rule);
@@ -122,6 +137,7 @@ public class AuthorizationOrchestrator {
             }
         };
     }
+
 
     private AuthorizationResult refuse(String code, String rule) {
 

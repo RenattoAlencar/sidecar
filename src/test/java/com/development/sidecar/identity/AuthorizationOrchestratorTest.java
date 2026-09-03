@@ -25,11 +25,11 @@ import static org.mockito.Mockito.when;
 class AuthorizationOrchestratorTest {
 
     private static final String JOURNEY = "jornada-transacional";
-    private static final String CHANNEL_TOKEN = "eyJraWQiOi...";
-    private static final String CODE = "149707";
+    private static final String CHANNEL_TOKEN = "fake.token.ydJ";
+    private static final String CODE = "fake.codigo.039";
     private static final String RULE = "pix-transfer";
-    private static final String SESSION = "eyJ0eXAiOiJKV1Qi...";
-    private static final String TOKEN_REF = "84da0844-d1f9-31f9-b4f4-79b420be8be4";
+    private static final String SESSION = "fake.sessao.Qm7";
+    private static final String TOKEN_REF = "fake.referencia.Lp2";
 
     private static final byte[] PAYLOAD =
             "{\"channel\":{},\"risk\":{}}".getBytes(StandardCharsets.UTF_8);
@@ -110,7 +110,7 @@ class AuthorizationOrchestratorTest {
     }
 
     @Nested
-    @DisplayName("Resposta ao desafio")
+    @DisplayName("Continuação da jornada")
     class Advance {
 
         @Test
@@ -125,13 +125,29 @@ class AuthorizationOrchestratorTest {
         }
 
         @Test
-        @DisplayName("sem resposta, não chega a chamar o provedor")
-        void recusa_sem_resposta() {
+        @DisplayName("sem resposta, consulta o desfecho: há desafios cumpridos fora do canal")
+        void sem_resposta_consulta_o_desfecho() {
 
-            AuthorizationResult result = orchestrator.advance(SESSION, "  ", RULE);
+            when(journeyClient.advance(SESSION, null))
+                    .thenReturn(JourneyOutcome.challenge(challengeStep()));
 
-            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.BAD_REQUEST);
-            verifyNoInteractions(journeyClient);
+            AuthorizationResult result = orchestrator.advance(SESSION, null, RULE);
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.CHALLENGE);
+            verify(journeyClient).advance(SESSION, null);
+        }
+
+        @Test
+        @DisplayName("quem decide se a ausência de resposta serve é o provedor")
+        void ausencia_de_resposta_e_decidida_pelo_provedor() {
+
+            when(journeyClient.advance(SESSION, null))
+                    .thenReturn(JourneyOutcome.denied("002"));
+
+            AuthorizationResult result = orchestrator.advance(SESSION, null, RULE);
+
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.DENIED);
+            assertThat(result.refusal()).isEqualTo(RefusalKind.CODE_REQUIRED);
         }
     }
 
@@ -372,6 +388,6 @@ class AuthorizationOrchestratorTest {
     }
 
     private static AccessToken accessToken() {
-        return new AccessToken("opaco", "Bearer", Duration.ofSeconds(3599), "write");
+        return new AccessToken("fake.acesso.Wq5", "Bearer", Duration.ofSeconds(3599), "write");
     }
 }
