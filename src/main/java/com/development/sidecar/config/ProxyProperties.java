@@ -15,7 +15,9 @@ import org.springframework.web.util.pattern.PathPatternParser;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Validated
 @ConfigurationProperties(prefix = "proxy")
@@ -55,6 +57,26 @@ public record ProxyProperties(
         }
     }
 
+    /**
+     * Uma rota verificada.
+     *
+     * @param path    o caminho a verificar.
+     *                <p>
+     *                Aceita segmento variável — {@code /chaves/{id}} — e curinga
+     *                de um segmento — {@code /chaves/*}. O nome dentro das chaves
+     *                é livre e serve a quem lê a regra; para a comparação, só
+     *                importa que ali há um segmento qualquer.
+     *                <p>
+     *                <strong>Não aceita {@code **}.</strong> Um curinga de
+     *                múltiplos segmentos protege o que existe hoje e tudo que for
+     *                criado depois, sem ninguém revisar — e uma rota nasce
+     *                verificada, ou desprotegida, por acidente.
+     * @param methods os métodos verificados nesse caminho.
+     *                <p>
+     *                Caminho e método juntos, e não só o caminho: consultar e
+     *                transacionar chegam pelo mesmo endereço, e nem sempre os
+     *                dois precisam de autorização.
+     */
     public record InterceptRule(
 
             @NotBlank(message = "proxy.intercept-rules[].name é obrigatório")
@@ -67,18 +89,21 @@ public record ProxyProperties(
             Set<HttpMethod> methods,
 
             @NotBlank(message = "proxy.intercept-rules[].journey é obrigatório")
-            String journey,
-
-            PathPattern compiled
+            String journey
     ) {
 
         private static final PathPatternParser PARSER = new PathPatternParser();
 
         private static final String MULTI_SEGMENT_WILDCARD = "**";
 
-        public InterceptRule(String name, String path, Set<HttpMethod> methods, String journey) {
-            this(name, path, methods, journey, compile(path));
-        }
+        /**
+         * Padrões já compilados, por caminho.
+         * <p>
+         * Compilar custa caro, e a comparação acontece em toda requisição. As
+         * regras vêm da configuração e não mudam depois da subida, então o
+         * conjunto de caminhos é pequeno e fixo.
+         */
+        private static final Map<String, PathPattern> COMPILED = new ConcurrentHashMap<>();
 
         public InterceptRule {
             name = name == null ? "" : name.trim();
@@ -86,42 +111,34 @@ public record ProxyProperties(
             journey = journey == null ? "" : journey.trim();
 
             methods = methods == null ? Set.of() : Set.copyOf(methods);
+
+            requireSupportedPattern(path);
         }
 
-        private static PathPattern compile(String path) {
+        private static void requireSupportedPattern(String path) {
 
-            String trimmed = path == null ? "" : path.trim();
-
-            if (trimmed.isBlank()) {
-                return null;
-            }
-
-            if (trimmed.contains(MULTI_SEGMENT_WILDCARD)) {
+            if (path.contains(MULTI_SEGMENT_WILDCARD)) {
                 throw new IllegalArgumentException(
                         "proxy.intercept-rules[].path não aceita '" + MULTI_SEGMENT_WILDCARD
                                 + "': o curinga de múltiplos segmentos verificaria também as "
                                 + "rotas criadas depois, sem revisão. Use '{variavel}' ou '*' "
-                                + "para um segmento. Caminho recebido: " + trimmed);
-            }
-
-            try {
-                return PARSER.parse(trimmed);
-
-            } catch (RuntimeException e) {
-                throw new IllegalArgumentException(
-                        "proxy.intercept-rules[].path não é um caminho válido: " + trimmed, e);
+                                + "para um segmento. Caminho recebido: " + path);
             }
         }
 
         public boolean matches(String requestPath, HttpMethod method) {
 
-            if (compiled == null || requestPath == null || method == null) {
+            if (path.isBlank() || requestPath == null || method == null) {
                 return false;
             }
             if (!methods.contains(method)) {
                 return false;
             }
-            return compiled.matches(PathContainer.parsePath(requestPath));
+            return pattern().matches(PathContainer.parsePath(requestPath));
+        }
+
+        private PathPattern pattern() {
+            return COMPILED.computeIfAbsent(path, PARSER::parse);
         }
     }
 
