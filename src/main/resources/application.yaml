@@ -45,16 +45,37 @@ proxy:
     correlation-header: ${PROXY_CORRELATION_HEADER:x-empresa-correlation-id}
 
     intercept-rules:
+
+      # Transferência — o fluxo já validado, com payload e vínculo à transação.
       - name: ${NAME_PIX_TRANSFERENCIA:pix-transfer}
         path: ${PATH_PIX_TRANSFERENCIA:/api/v1/pix/transferencia}
         methods: [ POST ]
-        journey: ${JOURNEY_PIX_TRANSFERENCIA:******}
+        journey: ${JOURNEY_PIX_TRANSFERENCIA:app-bank-authz-transacional}
 
-      - name: ${NAME_PIX_CHAVES:pix-chaves}
+      # Consulta sem identificador — exercita método sem corpo.
+      - name: ${NAME_PIX_CHAVES_CONSULTA:pix-chaves-consulta}
         path: ${PATH_PIX_CHAVES:/api/v1/pix/chaves}
         methods: [ GET ]
-        journey: ${JOURNEY_PIX_CHAVES:*******}
+        journey: ${JOURNEY_PIX_CHAVES_CONSULTA:pdc-bank-authz-consultivo}
 
+      # Alteração — mesmo caminho da consulta, métodos diferentes.
+      # Exercita a discriminação por método.
+      - name: ${NAME_PIX_CHAVES_ALTERACAO:pix-chaves-alteracao}
+        path: ${PATH_PIX_CHAVES_ALTERACAO:/api/v1/pix/chaves}
+        methods: [ PUT, PATCH ]
+        journey: ${JOURNEY_PIX_CHAVES_ALTERACAO:app-bank-authz-transacional}
+
+      # Exclusão — exercita o corpo em DELETE, que antes era descartado.
+      - name: ${NAME_PIX_CHAVES_EXCLUSAO:pix-chaves-exclusao}
+        path: ${PATH_PIX_CHAVES_EXCLUSAO:/api/v1/pix/chaves}
+        methods: [ DELETE ]
+        journey: ${JOURNEY_PIX_CHAVES_EXCLUSAO:app-bank-authz-transacional}
+
+      # Consulta com identificador no caminho — exercita o segmento variável.
+      - name: ${NAME_PIX_CHAVE_DETALHE:pix-chave-detalhe}
+        path: ${PATH_PIX_CHAVE_DETALHE:/api/v1/pix/chaves/{chave}}
+        methods: [ GET ]
+        journey: ${JOURNEY_PIX_CHAVE_DETALHE:pdc-bank-authz-consultivo}
 
 channel:
   session-header: ${CHANNEL_SESSION_HEADER:x-empresa**-authz-session}
