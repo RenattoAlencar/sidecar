@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
 class RouteResolverTest {
 
@@ -172,6 +173,105 @@ class RouteResolverTest {
 
             assertThat(multiple.resolve("/api/v1/pix", HttpMethod.DELETE).outcome())
                     .isEqualTo(RouteDecision.Outcome.PASSTHROUGH);
+        }
+    }
+
+    @Nested
+    @DisplayName("Caminho com segmento variável")
+    class PathPatterns {
+
+        @Test
+        @DisplayName("o segmento variável casa qualquer valor")
+        void casa_segmento_variavel() {
+
+            RouteResolver resolver = resolverWith(new InterceptRule(
+                    "chave", "/api/v1/pix/chaves/{chave}", Set.of(HttpMethod.GET), JOURNEY));
+
+            assertThat(resolver.resolve("/api/v1/pix/chaves/abc123", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.INTERCEPT);
+
+            assertThat(resolver.resolve("/api/v1/pix/chaves/999", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.INTERCEPT);
+        }
+
+        @Test
+        @DisplayName("o nome dentro das chaves não altera o casamento")
+        void o_nome_da_variavel_e_livre() {
+
+            RouteResolver porCpf = resolverWith(new InterceptRule(
+                    "chave", "/api/v1/pix/chaves/{cpf}", Set.of(HttpMethod.GET), JOURNEY));
+
+            assertThat(porCpf.resolve("/api/v1/pix/chaves/abc123", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.INTERCEPT);
+        }
+
+        @Test
+        @DisplayName("a variável ocupa um segmento, e não os que vierem depois")
+        void a_variavel_nao_atravessa_a_barra() {
+
+            RouteResolver resolver = resolverWith(new InterceptRule(
+                    "chave", "/api/v1/pix/chaves/{chave}", Set.of(HttpMethod.GET), JOURNEY));
+
+            assertThat(resolver.resolve("/api/v1/pix/chaves/abc/123", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.PASSTHROUGH);
+        }
+
+        @Test
+        @DisplayName("variável no meio do caminho preserva o que vem depois")
+        void variavel_no_meio() {
+
+            RouteResolver resolver = resolverWith(new InterceptRule(
+                    "cartao", "/api/v1/cartoes/{id}/detalhes",
+                    Set.of(HttpMethod.GET), JOURNEY));
+
+            assertThat(resolver.resolve("/api/v1/cartoes/999/detalhes", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.INTERCEPT);
+
+            assertThat(resolver.resolve("/api/v1/cartoes/999/limites", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.PASSTHROUGH);
+        }
+
+        @Test
+        @DisplayName("o curinga de um segmento equivale à variável")
+        void curinga_de_um_segmento() {
+
+            RouteResolver resolver = resolverWith(new InterceptRule(
+                    "chave", "/api/v1/pix/chaves/*", Set.of(HttpMethod.GET), JOURNEY));
+
+            assertThat(resolver.resolve("/api/v1/pix/chaves/abc123", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.INTERCEPT);
+
+            assertThat(resolver.resolve("/api/v1/pix/chaves/abc/123", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.PASSTHROUGH);
+        }
+
+        @Test
+        @DisplayName("caminho sem variável continua exato")
+        void sem_variavel_continua_exato() {
+
+            RouteResolver resolver = resolverWith(new InterceptRule(
+                    "chaves", "/api/v1/pix/chaves", Set.of(HttpMethod.GET), JOURNEY));
+
+            assertThat(resolver.resolve("/api/v1/pix/chaves", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.INTERCEPT);
+
+            assertThat(resolver.resolve("/api/v1/pix/chaves/abc", HttpMethod.GET).outcome())
+                    .isEqualTo(RouteDecision.Outcome.PASSTHROUGH);
+        }
+    }
+
+    @Nested
+    @DisplayName("Padrão que a configuração recusa")
+    class RejectedPatterns {
+
+        @Test
+        @DisplayName("curinga de múltiplos segmentos protegeria o que ainda não existe")
+        void recusa_curinga_amplo() {
+
+            assertThatThrownBy(() -> new InterceptRule(
+                    "amplo", "/api/**", Set.of(HttpMethod.GET), JOURNEY))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("**");
         }
     }
 

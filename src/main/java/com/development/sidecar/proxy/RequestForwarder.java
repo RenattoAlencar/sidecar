@@ -35,7 +35,7 @@ public class RequestForwarder {
     private static final int MAX_LOGGED_LENGTH = 64;
 
     private static final Set<String> BODYLESS_METHODS =
-            Set.of("GET", "HEAD", "DELETE", "OPTIONS", "TRACE");
+            Set.of("GET", "HEAD", "OPTIONS", "TRACE");
 
     private final HttpClient httpClient;
     private final ProxyProperties properties;

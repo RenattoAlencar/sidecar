@@ -7,7 +7,10 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.server.PathContainer;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 import java.net.URI;
 import java.time.Duration;
@@ -64,8 +67,18 @@ public record ProxyProperties(
             Set<HttpMethod> methods,
 
             @NotBlank(message = "proxy.intercept-rules[].journey é obrigatório")
-            String journey
+            String journey,
+
+            PathPattern compiled
     ) {
+
+        private static final PathPatternParser PARSER = new PathPatternParser();
+
+        private static final String MULTI_SEGMENT_WILDCARD = "**";
+
+        public InterceptRule(String name, String path, Set<HttpMethod> methods, String journey) {
+            this(name, path, methods, journey, compile(path));
+        }
 
         public InterceptRule {
             name = name == null ? "" : name.trim();
@@ -75,8 +88,40 @@ public record ProxyProperties(
             methods = methods == null ? Set.of() : Set.copyOf(methods);
         }
 
+        private static PathPattern compile(String path) {
+
+            String trimmed = path == null ? "" : path.trim();
+
+            if (trimmed.isBlank()) {
+                return null;
+            }
+
+            if (trimmed.contains(MULTI_SEGMENT_WILDCARD)) {
+                throw new IllegalArgumentException(
+                        "proxy.intercept-rules[].path não aceita '" + MULTI_SEGMENT_WILDCARD
+                                + "': o curinga de múltiplos segmentos verificaria também as "
+                                + "rotas criadas depois, sem revisão. Use '{variavel}' ou '*' "
+                                + "para um segmento. Caminho recebido: " + trimmed);
+            }
+
+            try {
+                return PARSER.parse(trimmed);
+
+            } catch (RuntimeException e) {
+                throw new IllegalArgumentException(
+                        "proxy.intercept-rules[].path não é um caminho válido: " + trimmed, e);
+            }
+        }
+
         public boolean matches(String requestPath, HttpMethod method) {
-            return path.equals(requestPath) && methods.contains(method);
+
+            if (compiled == null || requestPath == null || method == null) {
+                return false;
+            }
+            if (!methods.contains(method)) {
+                return false;
+            }
+            return compiled.matches(PathContainer.parsePath(requestPath));
         }
     }
 
