@@ -449,6 +449,21 @@ class ProxyFilterTest {
             assertThat(response.getStatus()).isEqualTo(400);
             verifyNoInteractions(orchestrator);
         }
+
+        @Test
+        @DisplayName("verbo fora do conjunto conhecido não casa com regra alguma")
+        void recusa_verbo_desconhecido() throws Exception {
+
+            when(forwarder.framingRejection(any())).thenReturn(Optional.empty());
+
+            MockHttpServletRequest request = new MockHttpServletRequest("PROPFIND", PROTECTED_PATH);
+            request.setContent(BODY.getBytes(StandardCharsets.UTF_8));
+
+            filter.doFilter(request, response, new MockFilterChain());
+
+            assertThat(response.getStatus()).isEqualTo(400);
+            verifyNoInteractions(orchestrator);
+        }
     }
 
     @Nested

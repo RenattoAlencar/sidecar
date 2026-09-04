@@ -183,6 +183,19 @@ class RequestForwarderTest {
 
             assertThat(forwarder.readBody(request)).isEmpty();
         }
+
+        @Test
+        @DisplayName("exclusão carrega corpo: serviços mais antigos o enviam")
+        void exclusao_carrega_corpo() throws IOException {
+
+            MockHttpServletRequest request = new MockHttpServletRequest("DELETE", PATH);
+            request.setContentType("application/json");
+            request.setContent(BODY.getBytes(StandardCharsets.UTF_8));
+
+            byte[] body = forwarder.readBody(request);
+
+            assertThat(new String(body, StandardCharsets.UTF_8)).isEqualTo(BODY);
+        }
     }
 
     @Nested
@@ -281,6 +294,20 @@ class RequestForwarderTest {
                     Map.of("x-reservado", ""), null);
 
             assertThat(received.get().headers()).doesNotContainKey("x-reservado");
+        }
+
+        @Test
+        @DisplayName("o corpo da exclusão chega ao destino")
+        void encaminha_o_corpo_da_exclusao() throws IOException {
+
+            MockHttpServletRequest request = new MockHttpServletRequest("DELETE", PATH);
+            request.setContentType("application/json");
+            request.setContent(BODY.getBytes(StandardCharsets.UTF_8));
+            request.setRemoteAddr("10.0.0.1");
+
+            forwarder.forward(request, new MockHttpServletResponse(), Map.of(), null);
+
+            assertThat(received.get().body()).isEqualTo(BODY);
         }
     }
 

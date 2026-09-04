@@ -380,8 +380,17 @@ public class ProxyFilter extends OncePerRequestFilter {
     }
 
     private static HttpMethod method(HttpServletRequest request) {
+
         String name = request.getMethod();
 
-        return name == null ? null : HttpMethod.valueOf(name);
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        try {
+            return HttpMethod.valueOf(name);
+
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }
