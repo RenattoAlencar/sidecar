@@ -27,7 +27,7 @@ proxy:
   connect-timeout: ${PROXY_CONNECT_TIMEOUT:2s}
   read-timeout: ${PROXY_READ_TIMEOUT:10s}
   max-body-bytes: ${PROXY_MAX_BODY_BYTES:2097152}
-  correlation-header: ${PROXY_CORRELATION_HEADER:x-**********-correlation-id}
+  correlation-header: ${PROXY_CORRELATION_HEADER:x-empresa**-correlation-id}
 
 
 
@@ -37,18 +37,37 @@ proxy:
       methods: [ POST ]
       journey: ${JOURNEY_PIX_TRANSFERENCIA:app-bank-authz-transacional}
 
+  proxy:
+    target: ${PROXY_TARGET:http://127.0.0.1:8082}
+    connect-timeout: ${PROXY_CONNECT_TIMEOUT:2s}
+    read-timeout: ${PROXY_READ_TIMEOUT:10s}
+    max-body-bytes: ${PROXY_MAX_BODY_BYTES:2097152}
+    correlation-header: ${PROXY_CORRELATION_HEADER:x-empresa-correlation-id}
+
+    intercept-rules:
+      - name: ${NAME_PIX_TRANSFERENCIA:pix-transfer}
+        path: ${PATH_PIX_TRANSFERENCIA:/api/v1/pix/transferencia}
+        methods: [ POST ]
+        journey: ${JOURNEY_PIX_TRANSFERENCIA:******}
+
+      - name: ${NAME_PIX_CHAVES:pix-chaves}
+        path: ${PATH_PIX_CHAVES:/api/v1/pix/chaves}
+        methods: [ GET ]
+        journey: ${JOURNEY_PIX_CHAVES:*******}
+
+
 channel:
-  session-header: ${CHANNEL_SESSION_HEADER:x-**********-authz-session}
-  response-header: ${CHANNEL_RESPONSE_HEADER:x-**********-token}
-  token-reference-header: ${CHANNEL_TOKEN_REFERENCE_HEADER:x-**********-authentication-am}
+  session-header: ${CHANNEL_SESSION_HEADER:x-empresa**-authz-session}
+  response-header: ${CHANNEL_RESPONSE_HEADER:x-empresa**-token}
+  token-reference-header: ${CHANNEL_TOKEN_REFERENCE_HEADER:x-empresa**-authentication-am}
 
 identity:
   base-url: ${IDENTITY_BASE_URL:https://provedor-de-desenvolvimento.invalid/am}
   realm: ${IDENTITY_REALM:alpha}
   journey-type: ${IDENTITY_JOURNEY_TYPE:service}
 
-  channel-token-header: ${IDENTITY_CHANNEL_TOKEN_HEADER:x-**********-authentication}
-  authenticator-code-header: ${IDENTITY_AUTHENTICATOR_CODE_HEADER:x-**********-token}
+  channel-token-header: ${IDENTITY_CHANNEL_TOKEN_HEADER:x-empresa**-authentication}
+  authenticator-code-header: ${IDENTITY_AUTHENTICATOR_CODE_HEADER:x-empresa**-token}
 
   client-id: ${IDENTITY_CLIENT_ID:cliente-de-desenvolvimento}
   client-secret: ${IDENTITY_CLIENT_SECRET:segredo-de-desenvolvimento}

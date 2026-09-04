@@ -213,12 +213,12 @@ class RequestForwarderTest {
         void copia_cabecalhos_do_chamador() throws IOException {
 
             MockHttpServletRequest request = request();
-            request.addHeader("x-porto-authentication", "jwt-do-canal");
+            request.addHeader("x-empresa-authentication", "jwt-do-canal");
 
             forwarder.forward(request, new MockHttpServletResponse(), Map.of(), null);
 
             assertThat(received.get().headers())
-                    .containsEntry("x-porto-authentication", "jwt-do-canal");
+                    .containsEntry("x-empresa-authentication", "jwt-do-canal");
         }
 
         @Test

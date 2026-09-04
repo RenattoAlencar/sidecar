@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ProxyHeaderPolicyTest {
 
-    private static final String RESERVED = "x-porto-authentication-am";
+    private static final String RESERVED = "x-empresa-authentication-am";
     private static final String ORDINARY = "content-type";
 
     private final ProxyHeaderPolicy policy = new ProxyHeaderPolicy(List.of(RESERVED));
@@ -81,10 +81,10 @@ class ProxyHeaderPolicyTest {
 
         @ParameterizedTest(name = "{0}")
         @ValueSource(strings = {
-                "X-Porto-Authentication-AM",
-                "x-porto-authentication-am",
-                "X-PORTO-AUTHENTICATION-AM",
-                "  x-porto-authentication-am  "
+                "X-empresa-Authentication-AM",
+                "x-empresa-authentication-am",
+                "X-empresa-AUTHENTICATION-AM",
+                "  x-empresa-authentication-am  "
         })
         @DisplayName("o nome é comparado sem depender de caixa ou espaço")
         void reconhece_qualquer_grafia(String name) {
@@ -153,8 +153,8 @@ class ProxyHeaderPolicyTest {
                 "Content-Type",
                 "Accept",
                 "User-Agent",
-                "x-porto-authentication",
-                "x-porto-correlation-id"
+                "x-empresa-authentication",
+                "x-empresa-correlation-id"
         })
         void atravessam(String name) {
             assertThat(policy.isForwardable(name, Set.of())).isTrue();
