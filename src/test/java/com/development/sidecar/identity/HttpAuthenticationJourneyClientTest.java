@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -16,7 +17,6 @@ import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -27,11 +27,13 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class HttpAuthenticationJourneyClientTest {
 
     private static final String BASE_URL = "https://provedor.invalid/am";
+    private static final String AUTHENTICATE = BASE_URL + "/json/realms/alpha/authenticate";
+
     private static final String JOURNEY = "jornada-transacional";
-    private static final String CHANNEL_TOKEN = "eyJraWQiOi...";
-    private static final String CODE = "149707";
-    private static final String AUTH_ID = "eyJ0eXAiOiJKV1Qi...";
-    private static final String TOKEN_ID = "S6C6ZyySbmGRePt6xAoDNCxB-Tk";
+    private static final String CHANNEL_TOKEN = "fake.token.ydJ";
+    private static final String CODE = "fake.codigo.039";
+    private static final String AUTH_ID = "fake.sessao.Qm7";
+    private static final String TOKEN_ID = "fake.sessao-emitida.Bt4";
 
     private static final String CHANNEL_TOKEN_HEADER = "x-canal-autenticacao";
     private static final String CODE_HEADER = "x-canal-codigo";
@@ -50,10 +52,14 @@ class HttpAuthenticationJourneyClientTest {
             "output":[{"name":"prompt","value":"CHALLENGE_REQUIRED"}],
             "input":[{"name":"IDToken1","value":"OTP:AUTHFY"}]}]}""".formatted(AUTH_ID);
 
+    private static final String POLLING_CALLBACK = """
+            {"authId":"%s","callbacks":[{"type":"PollingWaitCallback",
+            "output":[{"name":"waitTime","value":"8000"},
+            {"name":"message","value":"app://exemplo/desafio"}]}]}""".formatted(AUTH_ID);
+
     private static final String COMPLETED = """
             {"tokenId":"%s","successUrl":"/enduser/","realm":"/alpha"}""".formatted(TOKEN_ID);
 
-    private RestClient restClient;
     private MockRestServiceServer server;
     private AuthenticationJourneyClient client;
 
@@ -62,9 +68,8 @@ class HttpAuthenticationJourneyClientTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(BASE_URL);
 
         server = MockRestServiceServer.bindTo(builder).build();
-        restClient = builder.build();
 
-        client = new HttpAuthenticationJourneyClient(restClient, properties());
+        client = new HttpAuthenticationJourneyClient(builder.build(), properties());
     }
 
     @Nested
@@ -76,7 +81,7 @@ class HttpAuthenticationJourneyClientTest {
         void apresenta_as_credenciais() {
 
             server.expect(requestTo(authenticateUri()))
-                    .andExpect(method(org.springframework.http.HttpMethod.POST))
+                    .andExpect(method(HttpMethod.POST))
                     .andExpect(header(CHANNEL_TOKEN_HEADER, CHANNEL_TOKEN))
                     .andExpect(header(CODE_HEADER, CODE))
                     .andExpect(header("Accept-API-Version", "resource=2.1"))
@@ -100,6 +105,30 @@ class HttpAuthenticationJourneyClientTest {
             client.start(JOURNEY, CHANNEL_TOKEN, null, PAYLOAD);
 
             server.verify();
+        }
+
+        @Test
+        @DisplayName("sem corpo, a jornada que não o pede segue normalmente")
+        void aceita_sem_corpo() {
+
+            server.expect(requestTo(authenticateUri()))
+                    .andRespond(withSuccess(POLLING_CALLBACK, MediaType.APPLICATION_JSON));
+
+            JourneyOutcome outcome = client.start(JOURNEY, CHANNEL_TOKEN, CODE, new byte[0]);
+
+            assertThat(outcome.type()).isEqualTo(JourneyOutcome.Type.CHALLENGE);
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("a jornada que pede o corpo recusa quando não há corpo")
+        void recusa_quando_o_corpo_e_pedido_e_nao_ha() {
+
+            server.expect(requestTo(authenticateUri()))
+                    .andRespond(withSuccess(PAYLOAD_CALLBACK, MediaType.APPLICATION_JSON));
+
+            assertThatThrownBy(() -> client.start(JOURNEY, CHANNEL_TOKEN, CODE, new byte[0]))
+                    .isInstanceOf(AuthenticationJourneyClient.JourneyUnavailableException.class);
         }
 
         @Test
@@ -128,7 +157,7 @@ class HttpAuthenticationJourneyClientTest {
             server.expect(requestTo(authenticateUri()))
                     .andRespond(withSuccess(PAYLOAD_CALLBACK, MediaType.APPLICATION_JSON));
 
-            server.expect(requestTo(BASE_URL + "/json/realms/alpha/authenticate"))
+            server.expect(requestTo(AUTHENTICATE))
                     .andExpect(jsonPath("$.authId").value(AUTH_ID))
                     .andExpect(jsonPath("$.callbacks[0].input[0].value")
                             .value(new String(PAYLOAD, StandardCharsets.UTF_8)))
@@ -147,7 +176,7 @@ class HttpAuthenticationJourneyClientTest {
             server.expect(requestTo(authenticateUri()))
                     .andRespond(withSuccess(PAYLOAD_CALLBACK, MediaType.APPLICATION_JSON));
 
-            server.expect(requestTo(BASE_URL + "/json/realms/alpha/authenticate"))
+            server.expect(requestTo(AUTHENTICATE))
                     .andExpect(jsonPath("$.callbacks[0].input[0].value")
                             .value("{\"channel\":{\"message\":\"não identificado\"},\"risk\":{}}"))
                     .andRespond(withSuccess(COMPLETED, MediaType.APPLICATION_JSON));
@@ -164,7 +193,7 @@ class HttpAuthenticationJourneyClientTest {
             server.expect(requestTo(authenticateUri()))
                     .andRespond(withSuccess(PAYLOAD_CALLBACK, MediaType.APPLICATION_JSON));
 
-            server.expect(requestTo(BASE_URL + "/json/realms/alpha/authenticate"))
+            server.expect(requestTo(AUTHENTICATE))
                     .andExpect(jsonPath("$.callbacks[0].type").value("NameCallback"))
                     .andExpect(jsonPath("$.callbacks[0].output[0].value")
                             .value("PAYLOAD_REQUIRED"))
@@ -196,12 +225,27 @@ class HttpAuthenticationJourneyClientTest {
         @Test
         void apresenta_a_resposta_na_entrada() {
 
-            server.expect(requestTo(BASE_URL + "/json/realms/alpha/authenticate"))
+            server.expect(requestTo(AUTHENTICATE))
                     .andExpect(jsonPath("$.authId").value(AUTH_ID))
                     .andExpect(jsonPath("$.callbacks[0].input[0].value").value(CODE))
                     .andRespond(withSuccess(COMPLETED, MediaType.APPLICATION_JSON));
 
             JourneyOutcome outcome = client.advance(AUTH_ID, CODE);
+
+            assertThat(outcome.type()).isEqualTo(JourneyOutcome.Type.COMPLETED);
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("sem resposta, apresenta a sessão sem callback: é como se pergunta")
+        void consulta_o_desfecho_sem_callback() {
+
+            server.expect(requestTo(AUTHENTICATE))
+                    .andExpect(jsonPath("$.authId").value(AUTH_ID))
+                    .andExpect(jsonPath("$.callbacks").isEmpty())
+                    .andRespond(withSuccess(COMPLETED, MediaType.APPLICATION_JSON));
+
+            JourneyOutcome outcome = client.advance(AUTH_ID, null);
 
             assertThat(outcome.type()).isEqualTo(JourneyOutcome.Type.COMPLETED);
             server.verify();
@@ -248,6 +292,17 @@ class HttpAuthenticationJourneyClientTest {
         }
 
         @Test
+        @DisplayName("chamada recusada é indisponibilidade: jornada ou realm mal configurados")
+        void chamada_recusada_vira_indisponibilidade() {
+
+            server.expect(requestTo(authenticateUri()))
+                    .andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+            assertThatThrownBy(() -> client.start(JOURNEY, CHANNEL_TOKEN, CODE, PAYLOAD))
+                    .isInstanceOf(AuthenticationJourneyClient.JourneyUnavailableException.class);
+        }
+
+        @Test
         @DisplayName("status inesperado é indisponibilidade, não recusa")
         void status_inesperado_vira_indisponibilidade() {
 
@@ -281,8 +336,7 @@ class HttpAuthenticationJourneyClientTest {
     }
 
     private static URI authenticateUri() {
-        return URI.create(BASE_URL
-                + "/json/realms/alpha/authenticate"
+        return URI.create(AUTHENTICATE
                 + "?authIndexType=service&authIndexValue=" + JOURNEY);
     }
 

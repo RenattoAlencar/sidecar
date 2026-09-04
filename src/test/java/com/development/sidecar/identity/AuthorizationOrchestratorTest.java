@@ -85,14 +85,19 @@ class AuthorizationOrchestratorTest {
         }
 
         @Test
-        @DisplayName("sem corpo não há o que autorizar")
-        void recusa_sem_corpo() {
+        @DisplayName("sem corpo a jornada decide: há consultas que não têm o que apresentar")
+        void aceita_sem_corpo() {
+
+            byte[] semCorpo = new byte[0];
+
+            when(journeyClient.start(JOURNEY, CHANNEL_TOKEN, CODE, semCorpo))
+                    .thenReturn(JourneyOutcome.challenge(challengeStep()));
 
             AuthorizationResult result =
-                    orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, new byte[0], RULE);
+                    orchestrator.start(JOURNEY, CHANNEL_TOKEN, CODE, semCorpo, RULE);
 
-            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.BAD_REQUEST);
-            verifyNoInteractions(journeyClient);
+            assertThat(result.type()).isEqualTo(AuthorizationResult.Type.CHALLENGE);
+            verify(journeyClient).start(JOURNEY, CHANNEL_TOKEN, CODE, semCorpo);
         }
 
         @Test
