@@ -45,7 +45,6 @@ proxy:
     correlation-header: ${PROXY_CORRELATION_HEADER:x-empresa-correlation-id}
 
     intercept-rules:
-
       # Transferência — o fluxo já validado, com payload e vínculo à transação.
       - name: ${NAME_PIX_TRANSFERENCIA:pix-transfer}
         path: ${PATH_PIX_TRANSFERENCIA:/api/v1/pix/transferencia}
