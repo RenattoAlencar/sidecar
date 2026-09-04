@@ -64,6 +64,13 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
                 : opening;
     }
 
+    /**
+     * Continua a jornada.
+     * <p>
+     * Com resposta, apresenta o que o titular respondeu. Sem resposta, pergunta
+     * se a jornada já concluiu — é o caso do desafio cumprido fora do canal, em
+     * que não há nada a apresentar, apenas o desfecho a consultar.
+     */
     @Override
     public JourneyOutcome advance(String sessionId, String response) {
 
@@ -198,6 +205,16 @@ public class HttpAuthenticationJourneyClient implements AuthenticationJourneyCli
             String reason = JourneyRefusal.describe(body);
             log.info("Jornada recusada no passo de {}: {}", stepName, reason);
             return JourneyOutcome.denied(reason);
+        }
+
+        if (status == HttpStatus.BAD_REQUEST.value()) {
+            log.error("Provedor recusou a chamada no passo de {}. "
+                            + "A causa mais comum é jornada inexistente ou realm divergente",
+                    stepName);
+            log.debug("Corpo da recusa: {}", body);
+
+            throw new JourneyUnavailableException(
+                    "Provedor recusou a chamada no passo de " + stepName);
         }
 
         if (status != HttpStatus.OK.value()) {
