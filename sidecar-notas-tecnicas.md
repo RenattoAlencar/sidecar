@@ -98,7 +98,7 @@ sobrevive ao processo.
 
 ### Um cabeçalho, dois sentidos
 
-`x-porto-authentication-am` é o mesmo nome nas duas direções: o canal envia a
+`x-empresa-authentication-am` é o mesmo nome nas duas direções: o canal envia a
 referência, o componente escreve o token. Por isso ele **precisa estar
 reservado** — fora da lista, o valor do canal atravessa junto e o BFF pode ler
 a referência achando que é token.
@@ -135,7 +135,7 @@ saberia o que fazer com ele.
 componente. Isso inclui:
 
 - `factor-onboarding` — entra em polling enquanto a biometria é analisada
-- `pdc-bank-authz-consultivo` — o lado do PDC é um laço de polling aguardando o
+- `*******` — o lado do PDC é um laço de polling aguardando o
   aplicativo
 
 As jornadas atendidas precisam concluir de forma síncrona, um passo por chamada.
@@ -168,7 +168,7 @@ não existe, mesmo com toda a mecânica montada.
 A camada só sustenta o que promete se:
 
 - não houver rota que chegue ao BFF sem passar pelo componente
-- o BFF recusar chamada sensível sem `x-porto-authentication-am`
+- o BFF recusar chamada sensível sem `x-empresa-authentication-am`
 
 Isso depende de topologia de rede e de validação no BFF, não do componente.
 

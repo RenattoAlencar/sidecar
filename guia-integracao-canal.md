@@ -75,16 +75,18 @@ casamento — e serve a quem lê a regra.
 | `PUT` | sim | sim | vínculo com a transação |
 | `PATCH` | sim | sim | vínculo com a transação |
 | `DELETE` | sim | sim | corpo opcional; serviços mais antigos o enviam |
-| `GET` | sim | não tem | exige jornada que não peça corpo |
-| `HEAD`, `OPTIONS` | sim | não tem | idem |
+| `GET` | sim | não tem | — |
+| `HEAD`, `OPTIONS` | sim | não tem | — |
 
-**Sobre o vínculo.** A jornada transacional calcula um resumo sobre o corpo
-apresentado, e é ele que prende a autorização àquela transação específica. Um
+**Sobre o vínculo.** Quando a jornada calcula um resumo sobre o corpo
+apresentado, é ele que prende a autorização àquela transação específica. Um
 método sem corpo não tem o que vincular — a autorização prova que o titular
 aprovou a operação, sem dizer sobre o quê.
 
-Por isso, rotas sem corpo exigem uma jornada que não peça o payload. Declarar uma
-rota `GET` apontando para a jornada transacional resulta em erro.
+**Quem decide se o corpo é necessário é a jornada, não o Sidecar.** Se ela pedir
+o corpo e não houver, a chamada termina em **503 `authorization_unavailable`**, e
+o registro do componente aponta o que faltou. Confirme com quem administra o
+provedor qual jornada atende a sua rota.
 
 ---
 
@@ -172,8 +174,16 @@ curl -i -X GET 'https://<seu-servico>/api/v1/pix/chaves/18075470001' \
   -H 'x-porto-token: 149707'
 ```
 
-A resposta é a mesma do Passo 1 — `200` com `tokenRef` —, e a efetivação repete a
-chamada com `x-porto-authentication-am`.
+**O retorno depende da jornada configurada para a rota.**
+
+| A jornada | O retorno |
+|---|---|
+| conclui na sessão do Sidecar | `200` com `tokenRef` — siga para o Passo 2 |
+| exige validação em outro aplicativo | `428` com `DEEPLINK` — veja a seção 5.2 |
+
+A jornada consultiva atualmente disponível é do segundo tipo: ela emite um
+endereço a abrir e aguarda que outra parte resolva. Confirme com quem administra
+o provedor qual jornada atende a sua rota, e trate os dois retornos no cliente.
 
 ---
 
