@@ -29,6 +29,12 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Porta de entrada do componente.
+ * <p>
+ * Decide o que fazer com a requisição e escreve o resultado. A mecânica da
+ * autorização fica no orquestrador; a tradução para o canal, no contrato.
+ */
 public class ProxyFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(ProxyFilter.class);
@@ -136,7 +142,9 @@ public class ProxyFilter extends OncePerRequestFilter {
             return;
         }
 
-        RouteDecision decision = routeResolver.resolve(request.getRequestURI(), method(request));
+        String path = proxyProperties.stripContextPath(request.getRequestURI());
+
+        RouteDecision decision = routeResolver.resolve(path, method(request));
 
         switch (decision.outcome()) {
 

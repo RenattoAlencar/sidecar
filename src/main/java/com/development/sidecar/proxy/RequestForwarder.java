@@ -161,11 +161,22 @@ public class RequestForwarder {
      * normalização da rota, que recusa codificação percentual, e a consulta passa
      * pela conferência abaixo.
      */
+    /**
+     * Monta o destino a partir do alvo configurado e do caminho recebido.
+     * <p>
+     * O prefixo do roteador de borda é removido: ele identifica a aplicação para
+     * quem está de fora, e o serviço de negócio não o conhece.
+     * <p>
+     * Esquema, servidor e porta são escritos a partir do alvo; caminho e consulta
+     * ocupam apenas as posições que lhes cabem. Não há concatenação de texto
+     * entre os dois, e nada do que vem de fora alcança a parte que define para
+     * onde a requisição vai.
+     */
     private URI buildTargetUri(HttpServletRequest request) {
 
         URI target = properties.target();
 
-        String path = request.getRequestURI();
+        String path = properties.stripContextPath(request.getRequestURI());
         String queryString = request.getQueryString();
 
         if (queryString != null && !queryString.isEmpty()) {

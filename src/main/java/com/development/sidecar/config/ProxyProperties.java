@@ -43,7 +43,20 @@ public record ProxyProperties(
 
         @DefaultValue("x-correlation-id")
         @NotBlank(message = "proxy.correlation-header é obrigatório")
-        String correlationHeader
+        String correlationHeader,
+
+        /**
+         * Prefixo que o roteador de borda acrescenta ao caminho.
+         * <p>
+         * Ele identifica a aplicação para quem está de fora e não faz parte do
+         * endereço que o serviço de negócio conhece. O componente o remove antes
+         * de comparar com a matriz e antes de montar o destino — sem isso, a
+         * regra nunca casaria, e a rota atravessaria sem verificação.
+         * <p>
+         * Vazio quando o roteador já entrega o caminho sem prefixo.
+         */
+        @DefaultValue("")
+        String contextPath
 ) {
 
     public ProxyProperties {
@@ -55,27 +68,58 @@ public record ProxyProperties(
         if (maxBodyBytes <= 0) {
             throw new IllegalArgumentException("proxy.max-body-bytes precisa ser maior que zero");
         }
+
+        contextPath = normalize(contextPath);
+    }
+
+    /**
+     * Remove o prefixo do caminho recebido.
+     * <p>
+     * Um caminho que não comece pelo prefixo é devolvido intacto: pode ser uma
+     * chamada interna, ou o roteador pode não tê-lo acrescentado.
+     */
+    public String stripContextPath(String requestPath) {
+
+        if (contextPath.isEmpty() || requestPath == null || !requestPath.startsWith(contextPath)) {
+            return requestPath;
+        }
+
+        String stripped = requestPath.substring(contextPath.length());
+
+        return stripped.isEmpty() ? "/" : stripped;
+    }
+
+    /**
+     * Aceita o prefixo com ou sem barra inicial, com ou sem barra final.
+     */
+    private static String normalize(String value) {
+
+        String trimmed = value == null ? "" : value.trim();
+
+        if (trimmed.isEmpty() || "/".equals(trimmed)) {
+            return "";
+        }
+
+        String withLeading = trimmed.startsWith("/") ? trimmed : "/" + trimmed;
+
+        return withLeading.endsWith("/")
+                ? withLeading.substring(0, withLeading.length() - 1)
+                : withLeading;
     }
 
     /**
      * Uma rota verificada.
      *
-     * @param path    o caminho a verificar.
+     * @param path    o caminho a verificar, sem o prefixo do roteador de borda.
      *                <p>
      *                Aceita segmento variável — {@code /chaves/{id}} — e curinga
      *                de um segmento — {@code /chaves/*}. O nome dentro das chaves
-     *                é livre e serve a quem lê a regra; para a comparação, só
-     *                importa que ali há um segmento qualquer.
+     *                é livre e serve a quem lê a regra.
      *                <p>
      *                <strong>Não aceita {@code **}.</strong> Um curinga de
      *                múltiplos segmentos protege o que existe hoje e tudo que for
-     *                criado depois, sem ninguém revisar — e uma rota nasce
-     *                verificada, ou desprotegida, por acidente.
+     *                criado depois, sem ninguém revisar.
      * @param methods os métodos verificados nesse caminho.
-     *                <p>
-     *                Caminho e método juntos, e não só o caminho: consultar e
-     *                transacionar chegam pelo mesmo endereço, e nem sempre os
-     *                dois precisam de autorização.
      */
     public record InterceptRule(
 
